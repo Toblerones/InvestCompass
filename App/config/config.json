@@ -11,10 +11,10 @@
     "AMD",
     "INTC"
   ],
-  "monthly_budget": 400,
-  "transaction_fee": 10,
-  "max_positions": 3,
-  "min_hold_days": 30,
+  "monthly_budget": 300,
+  "transaction_fee": 1,
+  "max_positions": 5,
+  "min_hold_days": 31,
   "stop_loss_percent": -10,
   "profit_target_percent": 20,
   "min_swap_benefit": 50

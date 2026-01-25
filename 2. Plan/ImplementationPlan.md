@@ -101,36 +101,36 @@ InvestCompass/
 - [x] Beautiful terminal output
 - [x] Working CLI commands
 - [x] Trade confirmation system
-
+ 
 ---
 
-### Sprint 4: Polish & Testing
+### Sprint 4: Polish & Testing ✅ COMPLETED
 **Duration**: 2 days
 **Goal**: Error handling, validation, documentation
 
 | ID | Task | Module | Status |
 |----|------|--------|--------|
-| 4.1 | Error handling (API failures, invalid JSON, retries) | All | ⬜ |
-| 4.2 | Validation (portfolio schema, action constraints) | `utils.py` | ⬜ |
-| 4.3 | Strategy principles document | `strategy.txt` | ⬜ |
-| 4.4 | End-to-end testing | Manual | ⬜ |
-| 4.5 | README with setup instructions | `README.md` | ⬜ |
+| 4.1 | Error handling (API failures, invalid JSON, retries) | All | ✅ |
+| 4.2 | Validation (portfolio schema, action constraints) | `utils.py` | ✅ |
+| 4.3 | Strategy principles document | `strategy.txt` | ✅ |
+| 4.4 | End-to-end testing | Manual | ✅ |
+| 4.5 | README with setup instructions | `README.md` | ✅ |
 
 **Deliverables**:
-- [ ] Robust error handling
-- [ ] Complete documentation
-- [ ] Working end-to-end system
+- [x] Robust error handling with retry logic
+- [x] Complete documentation
+- [x] Working end-to-end system
 
 ---
 
-## Definition of Done (MVP)
+## Definition of Done (MVP) ✅ ALL COMPLETE
 
-- [ ] User can run `python src/advisor.py` and get a recommendation
-- [ ] User can run `python src/advisor.py check` for quick status
-- [ ] User can run `python src/advisor.py confirm` to record trades
-- [ ] System validates 30-day FIFO constraint
-- [ ] Recommendations include clear reasoning
-- [ ] All API failures handled gracefully
+- [x] User can run `python -m src.advisor` and get a recommendation
+- [x] User can run `python -m src.advisor check` for quick status
+- [x] User can run `python -m src.advisor confirm` to record trades
+- [x] System validates 30-day FIFO constraint
+- [x] Recommendations include clear reasoning
+- [x] All API failures handled gracefully with retry logic
 
 ---
 
@@ -167,4 +167,16 @@ requests>=2.31.0
 
 ---
 
-**Sprint 1, 2 & 3 COMPLETED - Ready for Sprint 4 (Polish)**
+**ALL SPRINTS COMPLETED - MVP READY**
+
+Completed: January 26, 2026
+
+---
+
+## Change Requests
+
+| CR ID | Title | Status | Priority | Date |
+|-------|-------|--------|----------|------|
+| CR001 | Cash Flow Logic Enhancement | Open | Medium | 2026-01-26 |
+
+See `3. ChangeLog/` folder for detailed change request documents.

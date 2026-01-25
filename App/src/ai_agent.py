@@ -18,11 +18,21 @@ Key Functions:
 import os
 import json
 import re
+import time
 from typing import Optional
 from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()
+
+
+# =============================================================================
+# Retry Configuration
+# =============================================================================
+
+MAX_API_RETRIES = 3
+RETRY_DELAY = 2.0
+RETRY_BACKOFF = 2.0
 
 
 # =============================================================================
@@ -245,7 +255,7 @@ def _format_news(news: list) -> str:
 
 def get_recommendation(context: dict, strategy: str) -> dict:
     """
-    Get AI recommendation from Claude API.
+    Get AI recommendation from Claude API with retry logic.
 
     Args:
         context: Market context from analyzer
@@ -277,66 +287,100 @@ def get_recommendation(context: dict, strategy: str) -> dict:
 
     # Build the prompt
     prompt = build_prompt(context, strategy)
+    client = anthropic.Anthropic(api_key=api_key)
 
-    try:
-        client = anthropic.Anthropic(api_key=api_key)
+    # Retry loop
+    last_error = None
+    current_delay = RETRY_DELAY
 
-        message = client.messages.create(
-            model="claude-sonnet-4-20250514",
-            max_tokens=2000,
-            temperature=0.3,  # Lower temp for more consistent reasoning
-            messages=[
-                {"role": "user", "content": prompt}
-            ]
-        )
-
-        # Extract response text
-        response_text = message.content[0].text
-
-        # Parse the response
-        recommendation = parse_recommendation(response_text)
-
-        # Validate actions against constraints
-        if recommendation.get('actions'):
-            recommendation['actions'] = validate_actions(
-                recommendation['actions'],
-                context
+    for attempt in range(MAX_API_RETRIES + 1):
+        try:
+            message = client.messages.create(
+                model="claude-sonnet-4-20250514",
+                max_tokens=2000,
+                temperature=0.3,  # Lower temp for more consistent reasoning
+                messages=[
+                    {"role": "user", "content": prompt}
+                ]
             )
 
-        return recommendation
+            # Extract response text
+            response_text = message.content[0].text
 
-    except anthropic.APIConnectionError as e:
-        return {
-            'error': f'API connection error: {str(e)}',
-            'actions': [],
-            'overall_strategy': '',
-            'risk_warnings': ['Could not connect to Claude API'],
-            'confidence': 'LOW'
-        }
-    except anthropic.RateLimitError as e:
-        return {
-            'error': f'Rate limit exceeded: {str(e)}',
-            'actions': [],
-            'overall_strategy': '',
-            'risk_warnings': ['API rate limit reached, try again later'],
-            'confidence': 'LOW'
-        }
-    except anthropic.APIStatusError as e:
-        return {
-            'error': f'API error: {str(e)}',
-            'actions': [],
-            'overall_strategy': '',
-            'risk_warnings': ['API returned an error'],
-            'confidence': 'LOW'
-        }
-    except Exception as e:
-        return {
-            'error': f'Unexpected error: {str(e)}',
-            'actions': [],
-            'overall_strategy': '',
-            'risk_warnings': ['An unexpected error occurred'],
-            'confidence': 'LOW'
-        }
+            # Parse the response
+            recommendation = parse_recommendation(response_text)
+
+            # Validate actions against constraints
+            if recommendation.get('actions'):
+                recommendation['actions'] = validate_actions(
+                    recommendation['actions'],
+                    context
+                )
+
+            return recommendation
+
+        except anthropic.APIConnectionError as e:
+            last_error = ('connection', str(e))
+            if attempt < MAX_API_RETRIES:
+                print(f"  [!] API connection failed (attempt {attempt + 1}/{MAX_API_RETRIES + 1})")
+                print(f"      Retrying in {current_delay:.1f}s...")
+                time.sleep(current_delay)
+                current_delay *= RETRY_BACKOFF
+            continue
+
+        except anthropic.RateLimitError as e:
+            last_error = ('rate_limit', str(e))
+            if attempt < MAX_API_RETRIES:
+                # Rate limit needs longer delay
+                wait_time = current_delay * 2
+                print(f"  [!] Rate limited (attempt {attempt + 1}/{MAX_API_RETRIES + 1})")
+                print(f"      Retrying in {wait_time:.1f}s...")
+                time.sleep(wait_time)
+                current_delay *= RETRY_BACKOFF
+            continue
+
+        except anthropic.APIStatusError as e:
+            # Don't retry on 4xx client errors (except 429 rate limit)
+            if hasattr(e, 'status_code') and 400 <= e.status_code < 500:
+                return {
+                    'error': f'API error ({e.status_code}): {str(e)}',
+                    'actions': [],
+                    'overall_strategy': '',
+                    'risk_warnings': ['API returned a client error'],
+                    'confidence': 'LOW'
+                }
+            last_error = ('api_status', str(e))
+            if attempt < MAX_API_RETRIES:
+                print(f"  [!] API error (attempt {attempt + 1}/{MAX_API_RETRIES + 1})")
+                print(f"      Retrying in {current_delay:.1f}s...")
+                time.sleep(current_delay)
+                current_delay *= RETRY_BACKOFF
+            continue
+
+        except Exception as e:
+            last_error = ('unexpected', str(e))
+            break  # Don't retry on unexpected errors
+
+    # All retries failed
+    error_type, error_msg = last_error if last_error else ('unknown', 'Unknown error')
+
+    error_messages = {
+        'connection': ('Could not connect to Claude API', 'Connection error'),
+        'rate_limit': ('API rate limit reached after retries', 'Rate limit exceeded'),
+        'api_status': ('API returned an error', 'API error'),
+        'unexpected': ('An unexpected error occurred', 'Unexpected error'),
+        'unknown': ('Unknown error occurred', 'Unknown error')
+    }
+
+    warning, prefix = error_messages.get(error_type, error_messages['unknown'])
+
+    return {
+        'error': f'{prefix}: {error_msg}',
+        'actions': [],
+        'overall_strategy': '',
+        'risk_warnings': [warning],
+        'confidence': 'LOW'
+    }
 
 
 # =============================================================================

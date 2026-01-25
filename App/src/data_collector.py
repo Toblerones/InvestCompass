@@ -20,11 +20,75 @@ from datetime import datetime, date, timedelta
 from typing import Optional
 from urllib.parse import quote_plus
 import time
+import functools
+
+
+# =============================================================================
+# Retry Decorator
+# =============================================================================
+
+def retry_on_failure(max_retries: int = 3, delay: float = 1.0, backoff: float = 2.0):
+    """
+    Decorator to retry a function on failure with exponential backoff.
+
+    Args:
+        max_retries: Maximum number of retry attempts
+        delay: Initial delay between retries (seconds)
+        backoff: Multiplier for delay after each retry
+    """
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            last_exception = None
+            current_delay = delay
+
+            for attempt in range(max_retries + 1):
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    last_exception = e
+                    if attempt < max_retries:
+                        print(f"  [!] {func.__name__} failed (attempt {attempt + 1}/{max_retries + 1}): {e}")
+                        print(f"      Retrying in {current_delay:.1f}s...")
+                        time.sleep(current_delay)
+                        current_delay *= backoff
+                    else:
+                        print(f"  [X] {func.__name__} failed after {max_retries + 1} attempts")
+
+            raise last_exception
+        return wrapper
+    return decorator
 
 
 # =============================================================================
 # Price Data Fetching
 # =============================================================================
+
+@retry_on_failure(max_retries=2, delay=1.0)
+def _fetch_single_ticker_data(ticker: str) -> dict:
+    """Fetch market data for a single ticker with retry support."""
+    stock = yf.Ticker(ticker)
+    info = stock.info
+
+    # Validate we got real data
+    price = info.get('currentPrice') or info.get('regularMarketPrice', 0)
+    if price == 0:
+        raise ValueError(f"No price data available for {ticker}")
+
+    return {
+        'current_price': price,
+        'previous_close': info.get('previousClose', 0),
+        'open': info.get('open') or info.get('regularMarketOpen', 0),
+        'day_high': info.get('dayHigh') or info.get('regularMarketDayHigh', 0),
+        'day_low': info.get('dayLow') or info.get('regularMarketDayLow', 0),
+        'volume': info.get('volume') or info.get('regularMarketVolume', 0),
+        '52_week_high': info.get('fiftyTwoWeekHigh', 0),
+        '52_week_low': info.get('fiftyTwoWeekLow', 0),
+        'market_cap': info.get('marketCap', 0),
+        'currency': info.get('currency', 'USD'),
+        'exchange': info.get('exchange', ''),
+    }
+
 
 def fetch_market_data(tickers: list[str]) -> dict:
     """
@@ -37,33 +101,21 @@ def fetch_market_data(tickers: list[str]) -> dict:
         Dictionary with ticker as key and price data as value
     """
     result = {}
+    failed_tickers = []
 
     for ticker in tickers:
         try:
-            stock = yf.Ticker(ticker)
-            info = stock.info
-
-            # Get current price data
-            result[ticker] = {
-                'current_price': info.get('currentPrice') or info.get('regularMarketPrice', 0),
-                'previous_close': info.get('previousClose', 0),
-                'open': info.get('open') or info.get('regularMarketOpen', 0),
-                'day_high': info.get('dayHigh') or info.get('regularMarketDayHigh', 0),
-                'day_low': info.get('dayLow') or info.get('regularMarketDayLow', 0),
-                'volume': info.get('volume') or info.get('regularMarketVolume', 0),
-                '52_week_high': info.get('fiftyTwoWeekHigh', 0),
-                '52_week_low': info.get('fiftyTwoWeekLow', 0),
-                'market_cap': info.get('marketCap', 0),
-                'currency': info.get('currency', 'USD'),
-                'exchange': info.get('exchange', ''),
-            }
-
+            result[ticker] = _fetch_single_ticker_data(ticker)
         except Exception as e:
             print(f"Warning: Failed to fetch data for {ticker}: {e}")
             result[ticker] = {
                 'current_price': 0,
                 'error': str(e)
             }
+            failed_tickers.append(ticker)
+
+    if failed_tickers:
+        print(f"  [!] Failed to fetch data for: {', '.join(failed_tickers)}")
 
     return result
 

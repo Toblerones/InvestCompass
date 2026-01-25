@@ -220,30 +220,72 @@ def validate_config(config: dict) -> None:
         ValueError: If configuration is invalid
     """
     errors = []
+    warnings = []
 
-    # Required fields
-    required = ['watchlist', 'monthly_budget', 'transaction_fee', 'max_positions']
-    for field in required:
+    # Required fields with type checks
+    required_fields = {
+        'watchlist': list,
+        'monthly_budget': (int, float),
+        'transaction_fee': (int, float),
+        'max_positions': int
+    }
+
+    for field, expected_type in required_fields.items():
         if field not in config:
             errors.append(f"Missing required field: {field}")
+        elif not isinstance(config[field], expected_type):
+            errors.append(f"{field} must be {expected_type.__name__ if isinstance(expected_type, type) else 'numeric'}")
 
     # Validate watchlist
-    if 'watchlist' in config:
-        if not isinstance(config['watchlist'], list):
-            errors.append("watchlist must be a list")
-        elif len(config['watchlist']) == 0:
+    if 'watchlist' in config and isinstance(config['watchlist'], list):
+        if len(config['watchlist']) == 0:
             errors.append("watchlist cannot be empty")
         else:
+            invalid_tickers = []
             for ticker in config['watchlist']:
-                if not isinstance(ticker, str) or not ticker.isupper():
-                    errors.append(f"Invalid ticker format: {ticker}")
+                if not isinstance(ticker, str):
+                    invalid_tickers.append(str(ticker))
+                elif not ticker.isupper() or not ticker.isalpha():
+                    invalid_tickers.append(ticker)
+            if invalid_tickers:
+                errors.append(f"Invalid ticker format: {', '.join(invalid_tickers)} (must be uppercase letters only)")
 
-    # Validate numeric fields
-    if 'monthly_budget' in config and config['monthly_budget'] <= 0:
-        errors.append("monthly_budget must be positive")
+    # Validate numeric fields with reasonable bounds
+    if 'monthly_budget' in config:
+        if isinstance(config['monthly_budget'], (int, float)):
+            if config['monthly_budget'] <= 0:
+                errors.append("monthly_budget must be positive")
+            elif config['monthly_budget'] > 1000000:
+                warnings.append("monthly_budget is very high (>$1M)")
 
-    if 'max_positions' in config and config['max_positions'] <= 0:
-        errors.append("max_positions must be positive")
+    if 'max_positions' in config:
+        if isinstance(config['max_positions'], int):
+            if config['max_positions'] <= 0:
+                errors.append("max_positions must be positive")
+            elif config['max_positions'] > 20:
+                warnings.append("max_positions is high (>20) - consider diversification limits")
+
+    if 'transaction_fee' in config:
+        if isinstance(config['transaction_fee'], (int, float)):
+            if config['transaction_fee'] < 0:
+                errors.append("transaction_fee cannot be negative")
+
+    # Validate optional fields
+    if 'stop_loss_percent' in config:
+        if not isinstance(config['stop_loss_percent'], (int, float)):
+            errors.append("stop_loss_percent must be numeric")
+        elif config['stop_loss_percent'] > 0:
+            warnings.append("stop_loss_percent should be negative (e.g., -10)")
+
+    if 'profit_target_percent' in config:
+        if not isinstance(config['profit_target_percent'], (int, float)):
+            errors.append("profit_target_percent must be numeric")
+        elif config['profit_target_percent'] < 0:
+            warnings.append("profit_target_percent should be positive (e.g., 20)")
+
+    # Print warnings
+    for warning in warnings:
+        print(f"  [!] Config warning: {warning}")
 
     if errors:
         raise ValueError("Config validation failed:\n  - " + "\n  - ".join(errors))
