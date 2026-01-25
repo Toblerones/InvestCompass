@@ -18,6 +18,7 @@ import yfinance as yf
 import feedparser
 from datetime import datetime, date, timedelta
 from typing import Optional
+from urllib.parse import quote_plus
 import time
 
 
@@ -293,8 +294,8 @@ def scan_news(tickers: list[str], days: int = 7) -> dict:
 
     for ticker in tickers:
         try:
-            # Build Google News RSS URL
-            query = f"{ticker} stock"
+            # Build Google News RSS URL (URL-encode the query)
+            query = quote_plus(f"{ticker} stock")
             url = f"https://news.google.com/rss/search?q={query}&hl=en-US&gl=US&ceid=US:en"
 
             feed = feedparser.parse(url)

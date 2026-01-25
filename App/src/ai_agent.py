@@ -146,9 +146,9 @@ def _format_positions(positions: list) -> str:
 
         # Add exit signals/warnings
         for signal in pos.get('exit_signals', []):
-            lines.append(f"  ⚠️ {signal}")
+            lines.append(f"  [!] {signal}")
         for warning in pos.get('exit_warnings', []):
-            lines.append(f"  ⚠️ {warning}")
+            lines.append(f"  [!] {warning}")
 
     return "\n".join(lines)
 
@@ -197,9 +197,9 @@ def _format_opportunities(opportunities: list) -> str:
         )
 
         for signal in opp.get('entry_signals', []):
-            lines.append(f"  ✓ {signal}")
+            lines.append(f"  [+] {signal}")
         for warning in opp.get('entry_warnings', []):
-            lines.append(f"  ⚠️ {warning}")
+            lines.append(f"  [!] {warning}")
 
     return "\n".join(lines)
 
@@ -493,14 +493,14 @@ def format_recommendation_text(recommendation: dict) -> str:
             valid = action.get('valid', True)
 
             # Action header
-            status = "✓" if valid else "✗"
+            status = "[+]" if valid else "[X]"
             lines.append(f"{i}. [{status}] {action_type} {ticker} - {amount}")
 
             # Validation error/warning
             if action.get('validation_error'):
-                lines.append(f"   ⚠️ {action['validation_error']}")
+                lines.append(f"   [!] {action['validation_error']}")
             if action.get('validation_warning'):
-                lines.append(f"   ⚠️ {action['validation_warning']}")
+                lines.append(f"   [!] {action['validation_warning']}")
 
             # Reasoning
             if reasoning:
@@ -517,7 +517,7 @@ def format_recommendation_text(recommendation: dict) -> str:
         lines.append("RISK WARNINGS")
         lines.append("-" * 40)
         for warning in warnings:
-            lines.append(f"⚠️ {warning}")
+            lines.append(f"[!] {warning}")
         lines.append("")
 
     # Confidence

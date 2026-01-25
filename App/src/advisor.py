@@ -147,14 +147,14 @@ def cmd_confirm(args):
         result = process_trade_input(user_input, portfolio)
         if result:
             changes_made = True
-            print(colorize(f"✓ {result}", Colors.GREEN))
+            print(colorize(f"[+] {result}", Colors.GREEN))
         else:
             print(colorize("Could not parse input. Try again.", Colors.YELLOW))
 
     if changes_made:
         try:
             save_portfolio(portfolio)
-            print(colorize("\n✓ Portfolio updated successfully.", Colors.GREEN))
+            print(colorize("\n[+] Portfolio updated successfully.", Colors.GREEN))
         except Exception as e:
             print(colorize(f"\nError saving portfolio: {e}", Colors.RED))
             return 1
@@ -300,7 +300,7 @@ def cmd_init(args):
     # Save portfolio
     try:
         save_json(portfolio_path, portfolio)
-        print(colorize(f"\n✓ Portfolio initialized at: {portfolio_path}", Colors.GREEN))
+        print(colorize(f"\n[+] Portfolio initialized at: {portfolio_path}", Colors.GREEN))
         print(f"  Cash: ${portfolio['cash_available']:,.2f}")
         print("\nNext steps:")
         print("  1. Add positions using 'python -m src.advisor confirm'")

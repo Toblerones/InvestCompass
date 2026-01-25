@@ -154,7 +154,7 @@ def display_portfolio_status(portfolio: dict, context: dict) -> None:
 
         # Show exit signals if any
         for signal in pos.get('exit_signals', []):
-            print(colorize(f"         ⚠️  {signal}", Colors.YELLOW))
+            print(colorize(f"         [!]  {signal}", Colors.YELLOW))
 
     print_divider()
 
@@ -246,9 +246,9 @@ def display_market_snapshot(context: dict) -> None:
             print(f"  {ticker} (Rank #{rank}): ${price:.2f}, RSI={rsi:.1f}, Entry: {rec_color}")
 
             for signal in opp.get('entry_signals', []):
-                print(colorize(f"    ✓ {signal}", Colors.GREEN))
+                print(colorize(f"    [+] {signal}", Colors.GREEN))
             for warning in opp.get('entry_warnings', []):
-                print(colorize(f"    ⚠️ {warning}", Colors.YELLOW))
+                print(colorize(f"    [!] {warning}", Colors.YELLOW))
 
 
 # =============================================================================
@@ -353,15 +353,15 @@ def display_recommendations(recommendation: dict) -> None:
             else:
                 type_str = colorize("HOLD", Colors.YELLOW + Colors.BOLD)
 
-            status_icon = colorize("✓", Colors.GREEN) if valid else colorize("✗", Colors.RED)
+            status_icon = colorize("[+]", Colors.GREEN) if valid else colorize("[X]", Colors.RED)
 
             print(f"\n  {i}. [{status_icon}] {type_str} {colorize(ticker, Colors.BOLD)} - {amount}")
 
             # Validation error/warning
             if action.get('validation_error'):
-                print(colorize(f"     ⚠️  {action['validation_error']}", Colors.RED))
+                print(colorize(f"     [!]  {action['validation_error']}", Colors.RED))
             if action.get('validation_warning'):
-                print(colorize(f"     ⚠️  {action['validation_warning']}", Colors.YELLOW))
+                print(colorize(f"     [!]  {action['validation_warning']}", Colors.YELLOW))
 
             # Reasoning (word-wrapped)
             if reasoning:
@@ -400,7 +400,7 @@ def display_risk_warnings(warnings: list) -> None:
 
     print_subheader("Risk Warnings")
     for warning in warnings:
-        print(colorize(f"  ⚠️  {warning}", Colors.YELLOW))
+        print(colorize(f"  [!]  {warning}", Colors.YELLOW))
 
 
 # =============================================================================
@@ -441,7 +441,7 @@ def display_quick_check(portfolio: dict, context: dict) -> None:
         pnl = pos.get('pnl_percent', 0)
         days = pos.get('days_held', 0)
         rank = pos.get('rank', 'N/A')
-        sellable = "✓" if pos.get('is_sellable', False) else "🔒"
+        sellable = "[OK]" if pos.get('is_sellable', False) else "[LOCK]"
 
         pnl_str = color_value(pnl)
         print(f"  {sellable} {ticker}: {pnl_str} (Day {days}, Rank #{rank})")
@@ -449,15 +449,15 @@ def display_quick_check(portfolio: dict, context: dict) -> None:
         # Show critical signals only
         for signal in pos.get('exit_signals', []):
             if 'STOP LOSS' in signal or 'PROFIT TARGET' in signal:
-                print(colorize(f"     ⚠️  {signal}", Colors.YELLOW))
+                print(colorize(f"     [!]  {signal}", Colors.YELLOW))
 
     # Overall assessment
     print_subheader("Assessment")
     has_signals = any(pos.get('exit_signals') for pos in positions)
     if has_signals:
-        print(colorize("  ⚠️  Action may be needed - run full analysis", Colors.YELLOW))
+        print(colorize("  [!]  Action may be needed - run full analysis", Colors.YELLOW))
     else:
-        print(colorize("  ✓  All positions stable - continue holding", Colors.GREEN))
+        print(colorize("  [+]  All positions stable - continue holding", Colors.GREEN))
 
 
 # =============================================================================
