@@ -85,22 +85,22 @@ InvestCompass/
 
 ---
 
-### Sprint 3: Output & CLI
+### Sprint 3: Output & CLI ✅ COMPLETED
 **Duration**: 2-3 days
 **Goal**: Terminal interface and user workflows
 
 | ID | Task | Module | Status |
 |----|------|--------|--------|
-| 3.1 | ASCII table formatter, color coding | `display.py` | ⬜ |
-| 3.2 | Portfolio status, market snapshot, recommendations display | `display.py` | ⬜ |
-| 3.3 | CLI argument parsing (check, confirm, init) | `advisor.py` | ⬜ |
-| 3.4 | Main orchestration flow | `advisor.py` | ⬜ |
-| 3.5 | Trade confirmation workflow (update portfolio.json) | `advisor.py` | ⬜ |
+| 3.1 | ASCII table formatter, color coding | `display.py` | ✅ |
+| 3.2 | Portfolio status, market snapshot, recommendations display | `display.py` | ✅ |
+| 3.3 | CLI argument parsing (check, confirm, init) | `advisor.py` | ✅ |
+| 3.4 | Main orchestration flow | `advisor.py` | ✅ |
+| 3.5 | Trade confirmation workflow (update portfolio.json) | `advisor.py` | ✅ |
 
 **Deliverables**:
-- [ ] Beautiful terminal output
-- [ ] Working CLI commands
-- [ ] Trade confirmation system
+- [x] Beautiful terminal output
+- [x] Working CLI commands
+- [x] Trade confirmation system
 
 ---
 
@@ -167,4 +167,4 @@ requests>=2.31.0
 
 ---
 
-**Sprint 1 & 2 COMPLETED - Ready for Sprint 3**
+**Sprint 1, 2 & 3 COMPLETED - Ready for Sprint 4 (Polish)**
