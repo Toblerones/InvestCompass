@@ -1,0 +1,19 @@
+# Portfolio AI Agent - Dependencies
+
+# Market Data
+yfinance>=0.2.40
+
+# AI/LLM
+anthropic>=0.40.0
+
+# News Parsing
+feedparser>=6.0.11
+
+# Data Processing
+pandas>=2.2.0
+
+# Environment Management
+python-dotenv>=1.0.0
+
+# HTTP Requests
+requests>=2.31.0

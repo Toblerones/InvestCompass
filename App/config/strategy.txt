@@ -1,0 +1,66 @@
+PORTFOLIO ADVISOR STRATEGY - Balanced Pragmatist
+
+REGULATORY CONSTRAINTS (IMMUTABLE):
+- Minimum hold period: 30 days from purchase (no exceptions, even in -50% scenario)
+- FIFO rule: When selling, oldest lot must be 30+ days old before ANY sale of that ticker
+- This constraint is a feature: prevents emotional short-term reactions
+
+INVESTMENT PHILOSOPHY:
+- Horizon: Medium-term (3-6 months typical hold)
+- Focus: Fundamental quality over technical timing
+- Risk tolerance: Moderate (willing to hold through -10% drawdowns)
+- Style: Concentrated conviction (2-3 positions) over diversification
+
+CORE PRINCIPLES:
+1. Quality First: Prefer fundamentally strong businesses (top 3 ranked)
+2. Cost Conscious: Only swap positions if improvement justifies transaction costs ($50+ net benefit)
+3. Patient Capital: Every entry is a 30-90 day commitment, plan accordingly
+4. Disciplined Exits: Lock profits at +20%, stop losses at -10% (after min hold period)
+5. News Aware: Major negative catalysts override patience (exit when eligible)
+
+POSITION MANAGEMENT:
+- Target: 2-3 positions (equal weight unless high conviction)
+- Maximum: 3 positions (hard limit, no exceptions)
+- Rebalancing frequency: Monthly review, but only act if significant opportunity
+- Concentration limit: No single position > 50% of portfolio
+
+ENTRY CRITERIA:
+- Fundamental rank: Must be top 3 in watchlist
+- Technical timing: Prefer RSI < 50 or at support levels (not mandatory)
+- Earnings proximity: Avoid entry within 7 days of earnings (uncertainty)
+- News sentiment: No major negative catalysts in past 7 days
+- Capital efficiency: Use new monthly capital first, swap only if compelling
+
+EXIT CRITERIA (All subject to 30-day minimum hold):
+- Mandatory exits:
+  * Stop-loss: -10% from entry price
+  * Profit target: +20% from entry price
+- Discretionary exits:
+  * Ranking drops below #6 AND held > 45 days
+  * Major negative catalyst (regulatory, leadership change, earnings miss)
+  * Better opportunity available AND swap benefit > $50 after fees
+- Hold through:
+  * Normal volatility (-5% to +15% range)
+  * Temporary ranking weakness if fundamentals intact
+  * Market-wide pullbacks (not stock-specific)
+
+SPECIAL CONSIDERATIONS:
+- Lock awareness: If all positions locked (<30 days), can only add new position or hold cash
+- Opportunity cost: Missing a great entry due to locked capital is acceptable (discipline > FOMO)
+- News interpretation: AI chip export restrictions = headline risk (usually hold),
+  CEO resignation = structural risk (usually exit when eligible)
+- Earnings strategy: Hold through earnings if rank top 3, exit before earnings if rank #6+
+- Cash buffer: If no compelling opportunities (no top 3 stocks with good entry), hold cash until next month
+
+RISK MANAGEMENT:
+- Portfolio volatility: Accept -15% drawdowns as normal (don't panic sell)
+- Correlation awareness: Avoid 3 highly correlated stocks (e.g., all semiconductor)
+- Sector concentration: Tech focus is intentional, but spread across sub-sectors when possible
+- Black swan prep: No position > 40% to limit single-stock catastrophic risk
+
+DECISION FRAMEWORK PRIORITIES (in order):
+1. Regulatory compliance (30-day FIFO) - non-negotiable
+2. Capital preservation (stop-losses, major risk exits)
+3. Ranking quality (stay in top 3)
+4. Cost efficiency (minimize transaction fees)
+5. Timing optimization (technical entry/exit points)
