@@ -47,41 +47,41 @@ InvestCompass/
 
 ## Sprint Breakdown
 
-### Sprint 1: Foundation & Data Layer
+### Sprint 1: Foundation & Data Layer ✅ COMPLETED
 **Duration**: 2-3 days
 **Goal**: Project setup and data fetching infrastructure
 
 | ID | Task | Module | Status |
 |----|------|--------|--------|
-| 1.1 | Create file structure, requirements.txt, .gitignore, .env.example | Setup | ⬜ |
-| 1.2 | JSON loading/saving, date helpers, validation functions | `utils.py` | ⬜ |
-| 1.3 | yfinance integration (prices, fundamentals) | `data_collector.py` | ⬜ |
-| 1.4 | Google News RSS parsing | `data_collector.py` | ⬜ |
-| 1.5 | Create config.json, portfolio.json schemas and loaders | Config | ⬜ |
+| 1.1 | Create file structure, requirements.txt, .gitignore, .env.example | Setup | ✅ |
+| 1.2 | JSON loading/saving, date helpers, validation functions | `utils.py` | ✅ |
+| 1.3 | yfinance integration (prices, fundamentals) | `data_collector.py` | ✅ |
+| 1.4 | Google News RSS parsing | `data_collector.py` | ✅ |
+| 1.5 | Create config.json, portfolio.json schemas and loaders | Config | ✅ |
 
 **Deliverables**:
-- [ ] Working data fetcher for 10 tech stocks
-- [ ] Portfolio JSON loading/saving
-- [ ] Configuration management
+- [x] Working data fetcher for 10 tech stocks
+- [x] Portfolio JSON loading/saving
+- [x] Configuration management
 
 ---
 
-### Sprint 2: Analysis & AI Layer
+### Sprint 2: Analysis & AI Layer ✅ COMPLETED
 **Duration**: 3-4 days
 **Goal**: Ranking algorithm and Claude API integration
 
 | ID | Task | Module | Status |
 |----|------|--------|--------|
-| 2.1 | Fundamental ranking algorithm (revenue, FCF, P/E, momentum) | `analyzer.py` | ⬜ |
-| 2.2 | Technical indicators (RSI, SMA, support/resistance) | `analyzer.py` | ⬜ |
-| 2.3 | FIFO eligibility checker (30-day rule) | `analyzer.py` | ⬜ |
-| 2.4 | Prompt builder (context + portfolio + strategy) | `ai_agent.py` | ⬜ |
-| 2.5 | Claude API integration + response parser | `ai_agent.py` | ⬜ |
+| 2.1 | Fundamental ranking algorithm (revenue, FCF, P/E, momentum) | `analyzer.py` | ✅ |
+| 2.2 | Technical indicators (RSI, SMA, support/resistance) | `analyzer.py` | ✅ |
+| 2.3 | FIFO eligibility checker (30-day rule) | `analyzer.py` | ✅ |
+| 2.4 | Prompt builder (context + portfolio + strategy) | `ai_agent.py` | ✅ |
+| 2.5 | Claude API integration + response parser | `ai_agent.py` | ✅ |
 
 **Deliverables**:
-- [ ] Stock ranking system (1-10 scale)
-- [ ] Technical analysis calculations
-- [ ] Working LLM recommendation engine
+- [x] Stock ranking system (1-10 scale)
+- [x] Technical analysis calculations
+- [x] Working LLM recommendation engine
 
 ---
 
@@ -167,4 +167,4 @@ requests>=2.31.0
 
 ---
 
-**Ready to begin Sprint 1**
+**Sprint 1 & 2 COMPLETED - Ready for Sprint 3**
