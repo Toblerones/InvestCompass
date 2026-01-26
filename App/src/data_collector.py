@@ -327,7 +327,336 @@ def _calculate_rsi(prices, period: int = 14) -> float:
 
 
 # =============================================================================
-# News Data
+# Benchmark & Price Context
+# =============================================================================
+
+BENCHMARK_TICKER = "SPY"  # S&P 500 ETF as market benchmark
+
+
+def fetch_benchmark_data(period: str = "3mo") -> dict:
+    """
+    Fetch benchmark (SPY) historical data for price context calculations.
+
+    Args:
+        period: Time period to fetch (default 3mo for 30-day calculations)
+
+    Returns:
+        Dictionary with benchmark data including 30-day return
+    """
+    try:
+        stock = yf.Ticker(BENCHMARK_TICKER)
+        hist = stock.history(period=period)
+
+        if hist.empty or len(hist) < 22:  # Need ~22 trading days for 30-day return
+            return {'error': 'Insufficient benchmark data', 'return_30d': 0}
+
+        close_prices = hist['Close']
+
+        # Calculate 30-day return (approximately 22 trading days)
+        current_price = close_prices.iloc[-1]
+        price_30d_ago = close_prices.iloc[-22] if len(close_prices) >= 22 else close_prices.iloc[0]
+        return_30d = ((current_price - price_30d_ago) / price_30d_ago) * 100
+
+        return {
+            'ticker': BENCHMARK_TICKER,
+            'current_price': current_price,
+            'price_30d_ago': price_30d_ago,
+            'return_30d': round(return_30d, 2),
+        }
+
+    except Exception as e:
+        print(f"Warning: Failed to fetch benchmark data: {e}")
+        return {'error': str(e), 'return_30d': 0}
+
+
+def calculate_price_context(ticker: str, benchmark_return: float) -> dict:
+    """
+    Calculate 30-day price context for a ticker vs benchmark.
+
+    Args:
+        ticker: Stock ticker symbol
+        benchmark_return: 30-day return of benchmark (SPY)
+
+    Returns:
+        Dictionary with price context including trend classification
+    """
+    try:
+        stock = yf.Ticker(ticker)
+        hist = stock.history(period="3mo")
+
+        if hist.empty or len(hist) < 22:
+            return {
+                'ticker': ticker,
+                'return_30d': 0,
+                'benchmark_return': benchmark_return,
+                'relative_performance': 0,
+                'trend': 'UNKNOWN',
+                'error': 'Insufficient data'
+            }
+
+        close_prices = hist['Close']
+
+        # Calculate 30-day return
+        current_price = close_prices.iloc[-1]
+        price_30d_ago = close_prices.iloc[-22] if len(close_prices) >= 22 else close_prices.iloc[0]
+        return_30d = ((current_price - price_30d_ago) / price_30d_ago) * 100
+
+        # Calculate relative performance vs benchmark
+        relative_performance = return_30d - benchmark_return
+
+        # Classify trend (±3% threshold)
+        if relative_performance > 3:
+            trend = 'OUTPERFORMING'
+        elif relative_performance < -3:
+            trend = 'UNDERPERFORMING'
+        else:
+            trend = 'NEUTRAL'
+
+        return {
+            'ticker': ticker,
+            'current_price': round(current_price, 2),
+            'return_30d': round(return_30d, 2),
+            'benchmark_return': round(benchmark_return, 2),
+            'relative_performance': round(relative_performance, 2),
+            'trend': trend,
+        }
+
+    except Exception as e:
+        return {
+            'ticker': ticker,
+            'return_30d': 0,
+            'benchmark_return': benchmark_return,
+            'relative_performance': 0,
+            'trend': 'UNKNOWN',
+            'error': str(e)
+        }
+
+
+# =============================================================================
+# News Data - Theme Keywords & Source Quality
+# =============================================================================
+
+THEME_KEYWORDS = {
+    "regulatory": {
+        "primary": ["antitrust", "investigation", "doj", "ftc", "lawsuit", "probe",
+                   "eu commission", "fine", "penalty"],
+        "secondary": ["regulation", "regulators", "legal action", "government suit", "monopoly"],
+        "priority": 1  # Check first (most important)
+    },
+    "earnings": {
+        "primary": ["earnings", "revenue", "profit", "eps", "quarterly results",
+                   "q1", "q2", "q3", "q4", "beat", "miss", "guidance"],
+        "secondary": ["sales", "income", "forecast", "outlook", "analyst estimates"],
+        "priority": 2
+    },
+    "product": {
+        "primary": ["launch", "release", "announcement", "unveils", "introduces",
+                   "new product", "update", "version"],
+        "secondary": ["features", "beta", "rollout", "availability", "upgrade"],
+        "priority": 3
+    },
+    "leadership": {
+        "primary": ["ceo", "cfo", "executive", "resignation", "appointed",
+                   "steps down", "fires", "hires", "management change"],
+        "secondary": ["leadership", "departure", "promotes", "board", "founder"],
+        "priority": 4
+    },
+    "legal": {
+        "primary": ["lawsuit", "litigation", "settlement", "court", "ruling",
+                   "verdict", "judge", "plaintiff"],
+        "secondary": ["case", "trial", "appeal", "damages", "injunction"],
+        "priority": 5
+    },
+    "acquisition": {
+        "primary": ["acquires", "merger", "acquisition", "buys", "takeover", "deal", "purchase"],
+        "secondary": ["m&a", "consolidation", "buyout", "combines"],
+        "priority": 6
+    },
+    "partnership": {
+        "primary": ["partnership", "collaboration", "teams up", "alliance",
+                   "joint venture", "partnership with"],
+        "secondary": ["partners", "cooperates", "works with", "agreement"],
+        "priority": 7
+    },
+    "layoffs": {
+        "primary": ["layoffs", "job cuts", "fires", "workforce reduction",
+                   "downsizing", "restructuring"],
+        "secondary": ["cutting jobs", "eliminates positions", "headcount"],
+        "priority": 8
+    },
+    "data_breach": {
+        "primary": ["breach", "hack", "cyberattack", "data leak",
+                   "security incident", "compromised"],
+        "secondary": ["hacked", "stolen data", "vulnerability", "ransomware"],
+        "priority": 9
+    },
+    "analyst": {
+        "primary": ["upgrade", "downgrade", "price target", "analyst rating",
+                   "buy rating", "sell rating"],
+        "secondary": ["initiates coverage", "maintains", "raises target", "lowers target"],
+        "priority": 10
+    },
+    "stock_movement": {
+        "primary": ["stock rises", "stock falls", "shares up", "shares down",
+                   "gains", "losses", "rallies", "drops"],
+        "secondary": ["climbs", "jumps", "plunges", "surges", "tumbles"],
+        "priority": 99  # Check last (usually noise)
+    }
+}
+
+SOURCE_QUALITY = {
+    # Tier 1 - Most reliable (1.0)
+    "reuters": 1.0,
+    "bloomberg": 1.0,
+    "wsj": 1.0,
+    "wall street journal": 1.0,
+    "financial times": 1.0,
+    "ft": 1.0,
+    # Tier 2 - Reliable (0.9)
+    "cnbc": 0.9,
+    "barron's": 0.9,
+    "marketwatch": 0.8,
+    # Tier 3 - Tech-focused (0.7)
+    "techcrunch": 0.7,
+    "the verge": 0.7,
+    "wired": 0.7,
+    "ars technica": 0.7,
+    # Tier 4 - Lower quality (0.3-0.5)
+    "motley fool": 0.3,
+    "fool": 0.3,
+    "seeking alpha": 0.3,
+    "investorplace": 0.3,
+    "benzinga": 0.4,
+    # Default for unknown sources
+    "_default": 0.5
+}
+
+
+def get_source_quality(source: str) -> float:
+    """Get quality score for a news source."""
+    if not source:
+        return SOURCE_QUALITY["_default"]
+
+    source_lower = source.lower()
+    for key, score in SOURCE_QUALITY.items():
+        if key != "_default" and key in source_lower:
+            return score
+    return SOURCE_QUALITY["_default"]
+
+
+def classify_headline(headline: str, url: str = "") -> str:
+    """
+    Classify a news headline into a theme.
+
+    Args:
+        headline: The headline text
+        url: Optional URL for additional context
+
+    Returns:
+        theme name (str) or "other"
+    """
+    # Normalize
+    text = headline.lower()
+
+    # Sort themes by priority
+    sorted_themes = sorted(THEME_KEYWORDS.items(),
+                          key=lambda x: x[1]['priority'])
+
+    # Check each theme
+    for theme_name, keywords in sorted_themes:
+        # Check primary keywords first (higher weight)
+        for keyword in keywords['primary']:
+            if keyword in text:
+                return theme_name
+
+        # Check secondary keywords
+        for keyword in keywords['secondary']:
+            if keyword in text:
+                return theme_name
+
+    # No match
+    return "other"
+
+
+def cluster_news(articles: list) -> dict:
+    """
+    Cluster articles by theme.
+
+    Args:
+        articles: List of {title, published, link, source}
+
+    Returns:
+        Dict of {theme: [articles]}
+    """
+    clusters = {}
+
+    for article in articles:
+        headline = article.get('title', '')
+        theme = classify_headline(headline, article.get('link', ''))
+
+        if theme not in clusters:
+            clusters[theme] = []
+
+        clusters[theme].append(article)
+
+    return clusters
+
+
+def get_top_themes(clusters: dict, max_themes: int = 5, exclude_noise: bool = True) -> list:
+    """
+    Get top N themes by article count, excluding noise.
+
+    Args:
+        clusters: Dict from cluster_news()
+        max_themes: Max themes to return
+        exclude_noise: Whether to filter out stock_movement and analyst themes
+
+    Returns:
+        List of (theme, articles) sorted by article count
+    """
+    # Filter noise if requested
+    if exclude_noise:
+        noise_themes = ['stock_movement', 'analyst', 'other']
+        filtered = {k: v for k, v in clusters.items() if k not in noise_themes}
+    else:
+        filtered = clusters
+
+    # Sort by article count (weighted by source quality)
+    def theme_importance(item):
+        theme, articles = item
+        count = len(articles)
+        quality_sum = sum(get_source_quality(a.get('source', '')) for a in articles)
+        return count + (quality_sum * 0.5)  # Count matters more, quality is bonus
+
+    sorted_themes = sorted(filtered.items(), key=theme_importance, reverse=True)
+
+    # Return top N
+    return sorted_themes[:max_themes]
+
+
+def classify_frequency(article_count: int, days: int) -> str:
+    """
+    Classify frequency based on article count.
+
+    Args:
+        article_count: Number of articles on this theme
+        days: Lookback period in days
+
+    Returns:
+        "HIGH", "MEDIUM", or "LOW"
+    """
+    articles_per_week = (article_count / days) * 7
+
+    if articles_per_week >= 3:
+        return "HIGH"
+    elif articles_per_week >= 1:
+        return "MEDIUM"
+    else:
+        return "LOW"
+
+
+# =============================================================================
+# News Data - Fetching
 # =============================================================================
 
 def scan_news(tickers: list[str], days: int = 7) -> dict:
@@ -390,6 +719,121 @@ def _extract_source(source_text: str) -> str:
     return source_text.split(' - ')[-1] if ' - ' in source_text else source_text
 
 
+def scan_news_enhanced(tickers: list[str], days: int = 14, max_articles: int = 25) -> dict:
+    """
+    Scan news with clustering and filtering for enhanced context.
+
+    Args:
+        tickers: List of stock ticker symbols
+        days: Number of days to look back (default 14 for better trend detection)
+        max_articles: Maximum articles to fetch per ticker before filtering
+
+    Returns:
+        Dictionary with enhanced news structure:
+        {
+            "TICKER": {
+                "themes": [
+                    {
+                        "name": "regulatory",
+                        "headline": "DOJ expands investigation",
+                        "date": "2026-01-23",
+                        "source": "Reuters",
+                        "article_count": 4,
+                        "frequency": "HIGH",
+                        "urls": [...]
+                    }
+                ],
+                "raw_articles": [...],  # Original articles for reference
+                "stats": {
+                    "total_fetched": 25,
+                    "themes_found": 3,
+                    "noise_filtered": 12
+                }
+            }
+        }
+    """
+    result = {}
+    cutoff_date = datetime.now() - timedelta(days=days)
+
+    for ticker in tickers:
+        try:
+            # Build Google News RSS URL
+            query = quote_plus(f"{ticker} stock")
+            url = f"https://news.google.com/rss/search?q={query}&hl=en-US&gl=US&ceid=US:en"
+
+            feed = feedparser.parse(url)
+            raw_articles = []
+
+            for entry in feed.entries[:max_articles]:
+                # Parse publication date
+                pub_date = None
+                if hasattr(entry, 'published_parsed') and entry.published_parsed:
+                    pub_date = datetime(*entry.published_parsed[:6])
+
+                # Skip old articles
+                if pub_date and pub_date < cutoff_date:
+                    continue
+
+                raw_articles.append({
+                    'title': entry.get('title', ''),
+                    'link': entry.get('link', ''),
+                    'published': pub_date.strftime('%Y-%m-%d') if pub_date else '',
+                    'source': _extract_source(entry.get('source', {}).get('title', '')),
+                })
+
+            # Cluster articles by theme
+            clusters = cluster_news(raw_articles)
+
+            # Get top material themes (excludes noise)
+            top_themes = get_top_themes(clusters, max_themes=5, exclude_noise=True)
+
+            # Format themes for output
+            themes = []
+            for theme_name, articles in top_themes:
+                # Pick most recent article as representative
+                sorted_articles = sorted(articles,
+                                        key=lambda x: x.get('published', ''),
+                                        reverse=True)
+                representative = sorted_articles[0] if sorted_articles else {}
+
+                themes.append({
+                    "name": theme_name,
+                    "headline": representative.get('title', ''),
+                    "date": representative.get('published', ''),
+                    "source": representative.get('source', 'Unknown'),
+                    "article_count": len(articles),
+                    "frequency": classify_frequency(len(articles), days),
+                    "urls": [a.get('link', '') for a in articles]
+                })
+
+            # Calculate noise filtered count
+            noise_count = sum(len(v) for k, v in clusters.items()
+                            if k in ['stock_movement', 'analyst', 'other'])
+
+            result[ticker] = {
+                "themes": themes,
+                "raw_articles": raw_articles,
+                "stats": {
+                    "total_fetched": len(raw_articles),
+                    "themes_found": len(themes),
+                    "noise_filtered": noise_count
+                }
+            }
+
+            # Small delay to avoid rate limiting
+            time.sleep(0.2)
+
+        except Exception as e:
+            print(f"Warning: Failed to fetch enhanced news for {ticker}: {e}")
+            result[ticker] = {
+                "themes": [],
+                "raw_articles": [],
+                "stats": {"total_fetched": 0, "themes_found": 0, "noise_filtered": 0}
+            }
+
+    return result
+
+
 # =============================================================================
 # Combined Data Fetching
 # =============================================================================
@@ -421,15 +865,27 @@ def fetch_all_market_data(tickers: list[str], include_news: bool = True) -> dict
     for ticker in tickers:
         technicals[ticker] = calculate_technical_indicators(ticker)
 
+    # Fetch benchmark data for price context
+    print("  - Fetching benchmark (SPY) data...")
+    benchmark = fetch_benchmark_data()
+    benchmark_return = benchmark.get('return_30d', 0)
+
+    # Calculate price context for each ticker
+    print("  - Calculating price context...")
+    price_context = {}
+    for ticker in tickers:
+        price_context[ticker] = calculate_price_context(ticker, benchmark_return)
+
     # Fetch news (optional)
     news = {}
     if include_news:
-        print("  - Scanning news...")
-        news = scan_news(tickers)
+        print("  - Scanning news (enhanced clustering)...")
+        news = scan_news_enhanced(tickers)
 
     # Combine all data
     result = {
         'timestamp': datetime.now().isoformat(),
+        'benchmark': benchmark,
         'tickers': {}
     }
 
@@ -438,7 +894,8 @@ def fetch_all_market_data(tickers: list[str], include_news: bool = True) -> dict
             'price': prices.get(ticker, {}),
             'fundamentals': fundamentals.get(ticker, {}),
             'technicals': technicals.get(ticker, {}),
-            'news': news.get(ticker, []),
+            'price_context': price_context.get(ticker, {}),
+            'news': news.get(ticker, {"themes": [], "raw_articles": [], "stats": {}}),
         }
 
     print("Data fetching complete.")

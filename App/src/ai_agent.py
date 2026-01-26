@@ -39,17 +39,29 @@ RETRY_BACKOFF = 2.0
 # Prompt Building
 # =============================================================================
 
-def build_prompt(context: dict, strategy: str) -> str:
+def build_prompt(context: dict, strategy: str, narratives: dict = None) -> str:
     """
     Build the prompt for Claude API.
 
     Args:
         context: Market context from analyzer.generate_market_context()
         strategy: Strategy principles text
+        narratives: Optional narratives dictionary for context memory
 
     Returns:
         Formatted prompt string
     """
+    # Import narrative formatter if narratives provided
+    narratives_text = ""
+    if narratives:
+        from .narrative_manager import format_narratives_for_prompt, has_narratives
+        # Get tickers to include (held + top 3)
+        held_tickers = [p.get('ticker') for p in context.get('current_positions', [])]
+        top_3 = context.get('top_3_tickers', [])
+        all_tickers = list(set(held_tickers + top_3))
+        if has_narratives(narratives):
+            narratives_text = format_narratives_for_prompt(narratives, all_tickers)
+
     # Format current positions
     positions_text = _format_positions(context.get('current_positions', []))
 
@@ -65,6 +77,9 @@ def build_prompt(context: dict, strategy: str) -> str:
 
     # Format news
     news_text = _format_news(context.get('news_highlights', []))
+
+    # Format price context
+    price_context_text = _format_price_context(context)
 
     # Get config values
     config = context.get('config', {})
@@ -102,6 +117,12 @@ ENTRY OPPORTUNITIES (Top 3 not in portfolio):
 RECENT NEWS:
 {news_text}
 
+PRICE CONTEXT (30-day performance vs market):
+{price_context_text}
+
+ONGOING NARRATIVES (from previous analysis):
+{narratives_text if narratives_text else "No prior narratives tracked (first run or no active themes)."}
+
 CONSTRAINTS:
 - Maximum positions: {config.get('max_positions', 3)}
 - Transaction fee: ${transaction_fee} per trade
@@ -138,6 +159,13 @@ Consider:
 2. Ranking quality - are current holdings still top-ranked?
 3. Entry timing - are there better opportunities?
 4. Transaction costs - is any swap worth the fees?
+5. Ongoing narratives - has any material theme resolved or emerged?
+
+NARRATIVE UPDATES (in addition to recommendations):
+After analyzing current conditions, update narratives for stocks you're tracking:
+- NEW themes: If a material theme (regulatory, earnings concern, acquisition, etc.) has emerged, add it
+- UPDATES: If an active theme has new developments, update the summary
+- RESOLVE: If a theme has concluded (e.g., earnings beat resolves concern), mark resolved
 
 RESPONSE FORMAT (respond with valid JSON only):
 {{
@@ -153,7 +181,14 @@ RESPONSE FORMAT (respond with valid JSON only):
   ],
   "overall_strategy": "Brief portfolio-level explanation of the recommended approach",
   "risk_warnings": ["Warning 1", "Warning 2"],
-  "confidence": "HIGH" | "MEDIUM" | "LOW"
+  "confidence": "HIGH" | "MEDIUM" | "LOW",
+  "narrative_updates": {{
+    "TICKER": {{
+      "add": [{{"theme": "regulatory_risk", "summary": "DOJ investigation announced", "impact": "negative"}}],
+      "update": [{{"theme": "earnings_concern", "summary": "Updated: Q4 guidance lowered", "impact": "negative"}}],
+      "resolve": ["acquisition_rumor"]
+    }}
+  }}
 }}
 
 Important: Your response must be valid JSON only, no markdown or other formatting."""
@@ -260,21 +295,102 @@ def _format_lock_status(lock_status: dict) -> str:
 
 
 def _format_news(news: list) -> str:
-    """Format news highlights for prompt."""
+    """
+    Format enhanced news themes for prompt.
+
+    Args:
+        news: List of theme highlights with frequency and article counts
+
+    Returns:
+        Formatted news showing material themes with trend indicators
+    """
     if not news:
-        return "No recent news."
+        return "No material news themes identified."
 
     lines = []
     seen = set()  # Avoid duplicates
     for item in news[:10]:
-        title = item.get('title', '')
-        if title and title not in seen:
-            ticker = item.get('ticker', '')
-            date = item.get('date', '')
-            lines.append(f"- [{ticker}] {title} ({date})")
-            seen.add(title)
+        ticker = item.get('ticker', '')
+        theme_name = item.get('theme_name', 'unknown').replace('_', ' ').title()
+        headline = item.get('headline', '')
+        date = item.get('date', '')
+        source = item.get('source', 'Unknown')
+        article_count = item.get('article_count', 1)
+        frequency = item.get('frequency', 'LOW')
 
-    return "\n".join(lines) if lines else "No recent news."
+        # Create unique key to avoid duplicates
+        key = f"{ticker}:{theme_name}:{headline}"
+        if headline and key not in seen:
+            # Format: [TICKER] Theme (FREQ - N articles): Headline (Date, Source)
+            lines.append(
+                f"- [{ticker}] {theme_name} ({frequency} frequency - {article_count} articles): "
+                f"{headline} ({date}, {source})"
+            )
+            seen.add(key)
+
+    return "\n".join(lines) if lines else "No material news themes identified."
+
+
+def _format_price_context(context: dict) -> str:
+    """
+    Format price context showing 30-day performance vs benchmark.
+
+    Args:
+        context: Market context containing benchmark and position data
+
+    Returns:
+        Formatted price context string
+    """
+    benchmark = context.get('benchmark', {})
+    benchmark_return = benchmark.get('return_30d', 0)
+    positions = context.get('current_positions', [])
+    opportunities = context.get('entry_opportunities', [])
+
+    lines = [f"Market Benchmark (SPY): {benchmark_return:+.2f}% (30-day)"]
+    lines.append("")
+
+    # Current holdings performance
+    if positions:
+        lines.append("Current Holdings:")
+        for pos in positions:
+            ticker = pos.get('ticker', '')
+            return_30d = pos.get('return_30d', 0)
+            rel_perf = pos.get('relative_performance', 0)
+            trend = pos.get('trend', 'UNKNOWN')
+
+            trend_indicator = {
+                'OUTPERFORMING': '(beating market)',
+                'UNDERPERFORMING': '(lagging market)',
+                'NEUTRAL': '(tracking market)',
+                'UNKNOWN': ''
+            }.get(trend, '')
+
+            lines.append(
+                f"  - {ticker}: {return_30d:+.2f}% vs SPY {rel_perf:+.2f}% {trend_indicator}"
+            )
+        lines.append("")
+
+    # Entry opportunities performance
+    if opportunities:
+        lines.append("Entry Opportunities:")
+        for opp in opportunities:
+            ticker = opp.get('ticker', '')
+            return_30d = opp.get('return_30d', 0)
+            rel_perf = opp.get('relative_performance', 0)
+            trend = opp.get('trend', 'UNKNOWN')
+
+            trend_indicator = {
+                'OUTPERFORMING': '(beating market)',
+                'UNDERPERFORMING': '(lagging market)',
+                'NEUTRAL': '(tracking market)',
+                'UNKNOWN': ''
+            }.get(trend, '')
+
+            lines.append(
+                f"  - {ticker}: {return_30d:+.2f}% vs SPY {rel_perf:+.2f}% {trend_indicator}"
+            )
+
+    return "\n".join(lines) if lines else "Price context unavailable."
 
 
 def _format_holdings_for_cashflow(positions: list, transaction_fee: float) -> str:
@@ -314,16 +430,17 @@ def _format_holdings_for_cashflow(positions: list, transaction_fee: float) -> st
 # Claude API Integration
 # =============================================================================
 
-def get_recommendation(context: dict, strategy: str) -> dict:
+def get_recommendation(context: dict, strategy: str, narratives: dict = None) -> dict:
     """
     Get AI recommendation from Claude API with retry logic.
 
     Args:
         context: Market context from analyzer
         strategy: Strategy principles text
+        narratives: Optional narratives dictionary for context memory
 
     Returns:
-        Parsed recommendation dictionary
+        Parsed recommendation dictionary (includes narrative_updates if provided)
     """
     try:
         import anthropic
@@ -333,7 +450,8 @@ def get_recommendation(context: dict, strategy: str) -> dict:
             'actions': [],
             'overall_strategy': '',
             'risk_warnings': ['API client not available'],
-            'confidence': 'LOW'
+            'confidence': 'LOW',
+            'narrative_updates': {}
         }
 
     api_key = os.environ.get('ANTHROPIC_API_KEY')
@@ -343,11 +461,12 @@ def get_recommendation(context: dict, strategy: str) -> dict:
             'actions': [],
             'overall_strategy': '',
             'risk_warnings': ['API key not configured'],
-            'confidence': 'LOW'
+            'confidence': 'LOW',
+            'narrative_updates': {}
         }
 
     # Build the prompt
-    prompt = build_prompt(context, strategy)
+    prompt = build_prompt(context, strategy, narratives)
     client = anthropic.Anthropic(api_key=api_key)
 
     # Retry loop
@@ -464,6 +583,7 @@ def parse_recommendation(response: str) -> dict:
         'overall_strategy': '',
         'risk_warnings': [],
         'confidence': 'LOW',
+        'narrative_updates': {},
         'raw_response': response
     }
 

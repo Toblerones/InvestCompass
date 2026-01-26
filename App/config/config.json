@@ -1,5 +1,21 @@
 {
   "watchlist": [
+    "MSFT",
+    "GOOGL",
+    "AMZN",
+    "NVDA",
+    "TSLA",
+    "META"
+  ],
+  "monthly_budget": 300,
+  "transaction_fee": 1,
+  "max_positions": 5,
+  "min_hold_days": 31,
+  "stop_loss_percent": -10,
+  "profit_target_percent": 20,
+  "min_swap_benefit": 50,
+  
+  "bk_watchlist": [
     "AAPL",
     "MSFT",
     "GOOGL",
@@ -9,12 +25,6 @@
     "META",
     "AMD",
     "INTC"
-  ],
-  "monthly_budget": 300,
-  "transaction_fee": 1,
-  "max_positions": 5,
-  "min_hold_days": 31,
-  "stop_loss_percent": -10,
-  "profit_target_percent": 20,
-  "min_swap_benefit": 50
+  ]
 }
+

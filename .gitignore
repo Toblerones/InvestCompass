@@ -4,6 +4,9 @@
 # Portfolio data (personal financial data)
 App/config/portfolio.json
 
+# Narrative memory (user-specific context)
+App/config/narratives.json
+
 # Python
 __pycache__/
 *.py[cod]

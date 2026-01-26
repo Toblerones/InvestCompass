@@ -26,6 +26,10 @@ from .display import (
     display_full_dashboard, display_quick_check,
     print_header, print_subheader, colorize, Colors
 )
+from .narrative_manager import (
+    load_narratives, save_narratives, update_narratives,
+    prune_old_narratives, get_narrative_summary
+)
 
 
 # =============================================================================
@@ -51,6 +55,16 @@ def cmd_run(args):
         print(colorize(f"\nValidation Error: {e}", Colors.RED))
         return 1
 
+    # Load narratives for context memory
+    narratives = load_narratives()
+    narrative_summary = get_narrative_summary(narratives)
+    if narrative_summary['total_active'] > 0:
+        print(colorize(
+            f"  Loaded {narrative_summary['total_active']} active narratives "
+            f"across {narrative_summary['stocks_tracked']} stocks",
+            Colors.DIM
+        ))
+
     # Fetch market data
     print(colorize("Fetching market data (this may take a moment)...", Colors.DIM))
     tickers = config.get('watchlist', [])
@@ -65,9 +79,17 @@ def cmd_run(args):
     print(colorize("Analyzing market conditions...", Colors.DIM))
     context = generate_market_context(market_data, portfolio, config)
 
-    # Get AI recommendation
+    # Get AI recommendation (with narrative context)
     print(colorize("Getting AI recommendation...", Colors.DIM))
-    recommendation = get_recommendation(context, strategy)
+    recommendation = get_recommendation(context, strategy, narratives)
+
+    # Process narrative updates from AI response
+    narrative_updates = recommendation.get('narrative_updates', {})
+    if narrative_updates:
+        narratives = update_narratives(narratives, narrative_updates)
+        narratives = prune_old_narratives(narratives)
+        if save_narratives(narratives):
+            print(colorize("  Narrative context updated", Colors.DIM))
 
     # Display full dashboard
     display_full_dashboard(portfolio, context, recommendation)

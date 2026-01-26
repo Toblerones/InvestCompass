@@ -279,23 +279,98 @@ def display_news(context: dict, max_items: int = 8) -> None:
         if count >= max_items:
             break
 
-        title = item.get('title', '')
-        if not title or title in seen:
+        # Enhanced news structure with themes
+        headline = item.get('headline', '')
+        theme_name = item.get('theme_name', 'unknown').replace('_', ' ').title()
+
+        if not headline or headline in seen:
             continue
 
         ticker = item.get('ticker', '')
         date_str = item.get('date', '')
+        frequency = item.get('frequency', '')
+        article_count = item.get('article_count', 1)
 
-        # Truncate long titles
-        if len(title) > 60:
-            title = title[:57] + "..."
+        # Format theme badge
+        freq_badge = f"{frequency}" if frequency else ""
+        theme_badge = f"{theme_name} ({freq_badge} - {article_count} articles)" if freq_badge else theme_name
 
-        print(f"  [{colorize(ticker, Colors.CYAN)}] {title}")
+        # Truncate long headlines
+        if len(headline) > 60:
+            headline = headline[:57] + "..."
+
+        print(f"  [{colorize(ticker, Colors.CYAN)}] [{colorize(theme_badge, Colors.YELLOW)}]")
+        print(f"    {headline}")
         if date_str:
             print(colorize(f"       {date_str}", Colors.DIM))
 
-        seen.add(title)
+        seen.add(headline)
         count += 1
+
+
+# =============================================================================
+# Price Context Display
+# =============================================================================
+
+def display_price_context(context: dict) -> None:
+    """
+    Display 30-day price context vs market benchmark.
+
+    Args:
+        context: Market context from analyzer
+    """
+    print_header("PRICE CONTEXT (30-Day vs SPY)")
+
+    benchmark = context.get('benchmark', {})
+    benchmark_return = benchmark.get('return_30d', 0)
+
+    print()
+    print(f"  Market Benchmark (SPY): {color_value(benchmark_return)}")
+    print_divider()
+
+    positions = context.get('current_positions', [])
+    opportunities = context.get('entry_opportunities', [])
+
+    # Holdings price context
+    if positions:
+        print()
+        print(colorize("  Current Holdings:", Colors.BOLD))
+        for pos in positions:
+            ticker = pos.get('ticker', '')
+            return_30d = pos.get('return_30d', 0)
+            rel_perf = pos.get('relative_performance', 0)
+            trend = pos.get('trend', 'UNKNOWN')
+
+            # Color the trend
+            trend_colors = {
+                'OUTPERFORMING': Colors.GREEN,
+                'UNDERPERFORMING': Colors.RED,
+                'NEUTRAL': Colors.YELLOW,
+                'UNKNOWN': Colors.DIM
+            }
+            trend_str = colorize(trend, trend_colors.get(trend, Colors.DIM))
+
+            print(f"    {ticker:<8} {color_value(return_30d):>14} vs SPY {rel_perf:+.2f}%  [{trend_str}]")
+
+    # Entry opportunities price context
+    if opportunities:
+        print()
+        print(colorize("  Entry Opportunities:", Colors.BOLD))
+        for opp in opportunities:
+            ticker = opp.get('ticker', '')
+            return_30d = opp.get('return_30d', 0)
+            rel_perf = opp.get('relative_performance', 0)
+            trend = opp.get('trend', 'UNKNOWN')
+
+            trend_colors = {
+                'OUTPERFORMING': Colors.GREEN,
+                'UNDERPERFORMING': Colors.RED,
+                'NEUTRAL': Colors.YELLOW,
+                'UNKNOWN': Colors.DIM
+            }
+            trend_str = colorize(trend, trend_colors.get(trend, Colors.DIM))
+
+            print(f"    {ticker:<8} {color_value(return_30d):>14} vs SPY {rel_perf:+.2f}%  [{trend_str}]")
 
 
 # =============================================================================
@@ -434,7 +509,7 @@ def display_quick_check(portfolio: dict, context: dict) -> None:
     print(f"  Avg P&L: {color_value(total_pnl)}")
     print(f"  Cash: ${portfolio.get('cash_available', 0):,.2f}")
 
-    # Position quick view
+    # Position quick view with trend
     print_subheader("Positions")
     for pos in positions:
         ticker = pos.get('ticker', '')
@@ -442,9 +517,20 @@ def display_quick_check(portfolio: dict, context: dict) -> None:
         days = pos.get('days_held', 0)
         rank = pos.get('rank', 'N/A')
         sellable = "[OK]" if pos.get('is_sellable', False) else "[LOCK]"
+        trend = pos.get('trend', 'UNKNOWN')
 
         pnl_str = color_value(pnl)
-        print(f"  {sellable} {ticker}: {pnl_str} (Day {days}, Rank #{rank})")
+
+        # Trend indicator
+        trend_icons = {
+            'OUTPERFORMING': colorize('+', Colors.GREEN),
+            'UNDERPERFORMING': colorize('-', Colors.RED),
+            'NEUTRAL': colorize('=', Colors.YELLOW),
+            'UNKNOWN': ' '
+        }
+        trend_icon = trend_icons.get(trend, ' ')
+
+        print(f"  {sellable} {ticker}: {pnl_str} (Day {days}, Rank #{rank}) [{trend_icon}]")
 
         # Show critical signals only
         for signal in pos.get('exit_signals', []):
@@ -484,6 +570,7 @@ def display_full_dashboard(portfolio: dict, context: dict, recommendation: dict)
     display_portfolio_status(portfolio, context)
     display_market_snapshot(context)
     display_news(context)
+    display_price_context(context)
     display_recommendations(recommendation)
 
     # Footer

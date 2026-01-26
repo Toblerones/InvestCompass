@@ -251,7 +251,7 @@ def analyze_entry_signals(ticker: str, data: dict, config: dict) -> dict:
     """
     technicals = data.get('technicals', {})
     fundamentals = data.get('fundamentals', {})
-    news = data.get('news', [])
+    news = data.get('news', {})
 
     signals = []
     warnings = []
@@ -292,15 +292,27 @@ def analyze_entry_signals(ticker: str, data: dict, config: dict) -> dict:
         except ValueError:
             pass
 
-    # News Check
+    # News Check (handle both old list format and new enhanced format)
     if news:
-        # Simple check for negative headlines
-        negative_keywords = ['lawsuit', 'investigation', 'layoff', 'miss', 'decline', 'fall', 'drop', 'crash']
-        for article in news[:5]:
-            title = article.get('title', '').lower()
-            if any(kw in title for kw in negative_keywords):
-                warnings.append(f"Negative news: {article.get('title', '')[:60]}...")
-                break
+        # Determine if news is enhanced dict or old list format
+        if isinstance(news, dict):
+            # Enhanced format - check themes
+            themes = news.get('themes', [])
+            negative_themes = ['legal', 'regulatory', 'layoffs', 'data_breach']
+            for theme in themes[:3]:
+                theme_name = theme.get('name', '')
+                if theme_name in negative_themes:
+                    headline = theme.get('headline', '')
+                    warnings.append(f"Negative news ({theme_name}): {headline[:60]}...")
+                    break
+        else:
+            # Old format - check article titles
+            negative_keywords = ['lawsuit', 'investigation', 'layoff', 'miss', 'decline', 'fall', 'drop', 'crash']
+            for article in news[:5]:
+                title = article.get('title', '').lower()
+                if any(kw in title for kw in negative_keywords):
+                    warnings.append(f"Negative news: {article.get('title', '')[:60]}...")
+                    break
 
     # Overall assessment
     signal_strength = len(signals) - len(warnings)
@@ -432,6 +444,9 @@ def generate_market_context(market_data: dict, portfolio: dict, config: dict) ->
         # Get exit signals
         exit_analysis = analyze_exit_signals(pos, ticker_data, config)
 
+        # Get price context
+        price_ctx = ticker_data.get('price_context', {})
+
         position_analysis.append({
             'ticker': ticker,
             'quantity': pos.get('quantity', 0),
@@ -445,6 +460,9 @@ def generate_market_context(market_data: dict, portfolio: dict, config: dict) ->
             'is_sellable': exit_analysis.get('is_sellable', False),
             'exit_signals': exit_analysis.get('signals', []),
             'exit_warnings': exit_analysis.get('warnings', []),
+            'return_30d': price_ctx.get('return_30d', 0),
+            'relative_performance': price_ctx.get('relative_performance', 0),
+            'trend': price_ctx.get('trend', 'UNKNOWN'),
         })
 
     # Analyze entry opportunities for top 3 not in portfolio
@@ -456,6 +474,7 @@ def generate_market_context(market_data: dict, portfolio: dict, config: dict) ->
             ticker_data = market_data.get('tickers', {}).get(ticker, {})
             entry_analysis = analyze_entry_signals(ticker, ticker_data, config)
             rank_info = rankings.get(ticker, {})
+            price_ctx = ticker_data.get('price_context', {})
 
             entry_opportunities.append({
                 'ticker': ticker,
@@ -466,24 +485,37 @@ def generate_market_context(market_data: dict, portfolio: dict, config: dict) ->
                 'entry_signals': entry_analysis.get('signals', []),
                 'entry_warnings': entry_analysis.get('warnings', []),
                 'rsi': entry_analysis.get('rsi', 50),
+                'return_30d': price_ctx.get('return_30d', 0),
+                'relative_performance': price_ctx.get('relative_performance', 0),
+                'trend': price_ctx.get('trend', 'UNKNOWN'),
             })
 
     # Portfolio lock status
     lock_status = get_portfolio_lock_status(positions, config.get('min_hold_days', 30))
 
-    # Compile news highlights
+    # Compile news highlights (enhanced with themes)
     news_highlights = []
     for ticker in held_tickers + top_3[:3]:
-        ticker_news = market_data.get('tickers', {}).get(ticker, {}).get('news', [])
-        for article in ticker_news[:2]:
+        ticker_news = market_data.get('tickers', {}).get(ticker, {}).get('news', {})
+        themes = ticker_news.get('themes', [])
+        # Add top 3 material themes per ticker
+        for theme in themes[:3]:
             news_highlights.append({
                 'ticker': ticker,
-                'title': article.get('title', ''),
-                'date': article.get('published', ''),
+                'theme_name': theme.get('name', 'unknown'),
+                'headline': theme.get('headline', ''),
+                'date': theme.get('date', ''),
+                'source': theme.get('source', 'Unknown'),
+                'article_count': theme.get('article_count', 1),
+                'frequency': theme.get('frequency', 'LOW'),
             })
+
+    # Get benchmark data for context
+    benchmark = market_data.get('benchmark', {})
 
     return {
         'timestamp': market_data.get('timestamp', ''),
+        'benchmark': benchmark,
         'rankings': rankings,
         'top_3_tickers': top_3,
         'current_positions': position_analysis,

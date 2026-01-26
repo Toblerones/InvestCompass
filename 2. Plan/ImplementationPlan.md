@@ -178,5 +178,7 @@ Completed: January 26, 2026
 | CR ID | Title | Status | Priority | Date |
 |-------|-------|--------|----------|------|
 | CR001 | Cash Flow Logic Enhancement | Implemented | Medium | 2026-01-26 |
+| CR002 | Enhanced News Analysis with Price Context | Approved | High | 2026-01-26 |
 
 See `3. ChangeLog/` folder for detailed change request documents.
+See `2. Plan/CR002-ImplementationPlan.md` for CR002 implementation tracking.
