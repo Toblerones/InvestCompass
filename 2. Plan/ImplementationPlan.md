@@ -177,6 +177,6 @@ Completed: January 26, 2026
 
 | CR ID | Title | Status | Priority | Date |
 |-------|-------|--------|----------|------|
-| CR001 | Cash Flow Logic Enhancement | Open | Medium | 2026-01-26 |
+| CR001 | Cash Flow Logic Enhancement | Implemented | Medium | 2026-01-26 |
 
 See `3. ChangeLog/` folder for detailed change request documents.
