@@ -463,6 +463,7 @@ def generate_market_context(market_data: dict, portfolio: dict, config: dict) ->
             'return_30d': price_ctx.get('return_30d', 0),
             'relative_performance': price_ctx.get('relative_performance', 0),
             'trend': price_ctx.get('trend', 'UNKNOWN'),
+            'earnings': ticker_data.get('earnings'),  # Earnings proximity data
         })
 
     # Analyze entry opportunities for top 3 not in portfolio
@@ -488,6 +489,7 @@ def generate_market_context(market_data: dict, portfolio: dict, config: dict) ->
                 'return_30d': price_ctx.get('return_30d', 0),
                 'relative_performance': price_ctx.get('relative_performance', 0),
                 'trend': price_ctx.get('trend', 'UNKNOWN'),
+                'earnings': ticker_data.get('earnings'),  # Earnings proximity data
             })
 
     # Portfolio lock status

@@ -374,6 +374,85 @@ def display_price_context(context: dict) -> None:
 
 
 # =============================================================================
+# Earnings Calendar Display
+# =============================================================================
+
+def display_earnings_calendar(context: dict) -> None:
+    """
+    Display earnings calendar with trading restrictions.
+
+    Args:
+        context: Market context from analyzer
+    """
+    print_header("EARNINGS CALENDAR")
+
+    positions = context.get('current_positions', [])
+    opportunities = context.get('entry_opportunities', [])
+
+    has_imminent = False
+    has_upcoming = False
+
+    # Check positions for imminent earnings
+    print()
+    for pos in positions:
+        earnings = pos.get('earnings')
+        if earnings and earnings['days_until'] <= 7:
+            if not has_imminent:
+                print(colorize("  IMMINENT EARNINGS (Trading Restricted):", Colors.YELLOW + Colors.BOLD))
+                has_imminent = True
+
+            ticker = pos.get('ticker', '')
+            days = earnings['days_until']
+            date_str = earnings['date']
+
+            # Build restriction badges
+            restrictions = []
+            if earnings.get('sell_restricted'):
+                restrictions.append(colorize("NO SELL", Colors.RED))
+            if earnings.get('buy_restricted'):
+                restrictions.append(colorize("NO BUY", Colors.YELLOW))
+
+            restriction_str = " | ".join(restrictions) if restrictions else ""
+            print(f"    {ticker}: {date_str} ({days} days) [{restriction_str}]")
+
+    # Check opportunities for imminent earnings
+    for opp in opportunities:
+        earnings = opp.get('earnings')
+        if earnings and earnings['days_until'] <= 7:
+            if not has_imminent:
+                print(colorize("  IMMINENT EARNINGS (Trading Restricted):", Colors.YELLOW + Colors.BOLD))
+                has_imminent = True
+
+            ticker = opp.get('ticker', '')
+            days = earnings['days_until']
+            date_str = earnings['date']
+
+            print(f"    {ticker}: {date_str} ({days} days) [{colorize('NO BUY', Colors.YELLOW)}]")
+
+    # Check for upcoming earnings (8-30 days)
+    upcoming_tickers = []
+    for pos in positions:
+        earnings = pos.get('earnings')
+        if earnings and 7 < earnings['days_until'] <= 30:
+            upcoming_tickers.append(f"{pos.get('ticker', '')} ({earnings['days_until']}d)")
+
+    for opp in opportunities:
+        earnings = opp.get('earnings')
+        if earnings and 7 < earnings['days_until'] <= 30:
+            upcoming_tickers.append(f"{opp.get('ticker', '')} ({earnings['days_until']}d)")
+
+    if upcoming_tickers:
+        if has_imminent:
+            print()
+        print(colorize("  Upcoming Earnings (Safe to Trade):", Colors.BOLD))
+        print(f"    {', '.join(upcoming_tickers)}")
+        has_upcoming = True
+
+    if not has_imminent and not has_upcoming:
+        print(colorize("  No near-term earnings - all tickers safe for trading", Colors.GREEN))
+
+
+# =============================================================================
 # Recommendations Display
 # =============================================================================
 
@@ -571,6 +650,7 @@ def display_full_dashboard(portfolio: dict, context: dict, recommendation: dict)
     display_market_snapshot(context)
     display_news(context)
     display_price_context(context)
+    display_earnings_calendar(context)
     display_recommendations(recommendation)
 
     # Footer

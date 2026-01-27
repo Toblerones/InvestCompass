@@ -249,6 +249,58 @@ def _get_earnings_date(info: dict) -> Optional[str]:
     return None
 
 
+def calculate_earnings_proximity(earnings_date_str: Optional[str]) -> Optional[dict]:
+    """
+    Calculate days until earnings and determine trading restrictions.
+
+    Args:
+        earnings_date_str: Date string in YYYY-MM-DD format (from fundamentals)
+
+    Returns:
+        Dict with earnings proximity info or None if invalid/not applicable
+        {
+            'date': str,              # YYYY-MM-DD
+            'days_until': int,        # Days from today
+            'sell_restricted': bool,  # True if within 3-day blackout
+            'buy_restricted': bool,   # True if within 7-day window
+            'status': str             # 'IMMINENT', 'UPCOMING', or 'SAFE'
+        }
+    """
+    if not earnings_date_str:
+        return None
+
+    try:
+        earnings_date = datetime.strptime(earnings_date_str, '%Y-%m-%d').date()
+        today = date.today()
+        days_until = (earnings_date - today).days
+
+        # Ignore past dates or very far future (>90 days)
+        if days_until < 0 or days_until > 90:
+            return None
+
+        # Determine restrictions based on strategy rules
+        sell_restricted = days_until <= 3  # 3-day sell blackout
+        buy_restricted = days_until <= 7   # 7-day buy restriction
+
+        # Classify status
+        if days_until <= 7:
+            status = 'IMMINENT'
+        elif days_until <= 30:
+            status = 'UPCOMING'
+        else:
+            status = 'SAFE'
+
+        return {
+            'date': earnings_date_str,
+            'days_until': days_until,
+            'sell_restricted': sell_restricted,
+            'buy_restricted': buy_restricted,
+            'status': status
+        }
+    except (ValueError, TypeError):
+        return None
+
+
 # =============================================================================
 # Technical Data
 # =============================================================================
@@ -890,12 +942,20 @@ def fetch_all_market_data(tickers: list[str], include_news: bool = True) -> dict
     }
 
     for ticker in tickers:
+        # Get fundamentals data for this ticker
+        ticker_fundamentals = fundamentals.get(ticker, {})
+
+        # Calculate earnings proximity from existing earnings_date
+        earnings_date = ticker_fundamentals.get('earnings_date')
+        earnings_proximity = calculate_earnings_proximity(earnings_date)
+
         result['tickers'][ticker] = {
             'price': prices.get(ticker, {}),
-            'fundamentals': fundamentals.get(ticker, {}),
+            'fundamentals': ticker_fundamentals,
             'technicals': technicals.get(ticker, {}),
             'price_context': price_context.get(ticker, {}),
             'news': news.get(ticker, {"themes": [], "raw_articles": [], "stats": {}}),
+            'earnings': earnings_proximity,  # NEW: Earnings proximity data
         }
 
     print("Data fetching complete.")

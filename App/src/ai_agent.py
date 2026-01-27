@@ -81,6 +81,9 @@ def build_prompt(context: dict, strategy: str, narratives: dict = None) -> str:
     # Format price context
     price_context_text = _format_price_context(context)
 
+    # Format earnings calendar
+    earnings_text = _format_earnings_calendar(context)
+
     # Get config values
     config = context.get('config', {})
     cash = context.get('cash_available', 0)
@@ -119,6 +122,23 @@ RECENT NEWS:
 
 PRICE CONTEXT (30-day performance vs market):
 {price_context_text}
+
+EARNINGS CALENDAR:
+{earnings_text}
+
+CRITICAL EARNINGS RULES (IMMUTABLE - override other considerations):
+1. DO NOT SELL within 3 days before earnings
+   - Gap risk: may miss runup or avoid crash unpredictably
+   - Wait for post-earnings clarity before exiting
+
+2. DO NOT BUY within 7 days before earnings
+   - High volatility around earnings creates poor entry timing
+   - Entry price likely better after earnings event
+
+3. Exception: If approaching -10% stop-loss AND earnings imminent:
+   - Warn user explicitly about timing conflict
+   - Recommend waiting unless stop-loss breach is certain
+   - If must exit, acknowledge earnings timing risk in reasoning
 
 ONGOING NARRATIVES (from previous analysis):
 {narratives_text if narratives_text else "No prior narratives tracked (first run or no active themes)."}
@@ -422,6 +442,84 @@ def _format_holdings_for_cashflow(positions: list, transaction_fee: float) -> st
             f"- {ticker}: {qty} shares x ${current:.2f} = ${gross_value:.2f} "
             f"(net after fee: ${net_proceeds:.2f}) [{status}]"
         )
+
+    return "\n".join(lines)
+
+
+def _format_earnings_calendar(context: dict) -> str:
+    """
+    Format earnings calendar with trading restrictions for AI prompt.
+
+    Args:
+        context: Market context containing positions and opportunities with earnings data
+
+    Returns:
+        Formatted earnings calendar string with restrictions clearly stated
+    """
+    positions = context.get('current_positions', [])
+    opportunities = context.get('entry_opportunities', [])
+
+    imminent = []   # <= 7 days (restricted)
+    upcoming = []   # 8-30 days (safe)
+    no_data = []    # No data or > 30 days
+
+    # Check held positions
+    for pos in positions:
+        ticker = pos.get('ticker', '')
+        earnings = pos.get('earnings')
+        if earnings:
+            if earnings['days_until'] <= 7:
+                imminent.append((ticker, earnings, 'HELD'))
+            elif earnings['days_until'] <= 30:
+                upcoming.append((ticker, earnings))
+            else:
+                no_data.append(ticker)
+        else:
+            no_data.append(ticker)
+
+    # Check entry opportunities
+    for opp in opportunities:
+        ticker = opp.get('ticker', '')
+        earnings = opp.get('earnings')
+        if earnings:
+            if earnings['days_until'] <= 7:
+                imminent.append((ticker, earnings, 'OPPORTUNITY'))
+            elif earnings['days_until'] <= 30:
+                upcoming.append((ticker, earnings))
+            else:
+                no_data.append(ticker)
+        else:
+            no_data.append(ticker)
+
+    lines = []
+
+    # Imminent earnings - critical restrictions
+    if imminent:
+        lines.append("IMMINENT EARNINGS (Trading Restricted):")
+        for ticker, earnings, position_type in imminent:
+            days = earnings['days_until']
+            date_str = earnings['date']
+            lines.append(f"  {ticker}: {date_str} ({days} days away)")
+            if earnings.get('sell_restricted'):
+                lines.append(f"    - DO NOT SELL: Within 3-day blackout (gap risk, may miss runup)")
+            if earnings.get('buy_restricted'):
+                lines.append(f"    - DO NOT BUY: Within 7-day volatility window")
+            lines.append(f"    - Action: HOLD current position, reassess after earnings")
+        lines.append("")
+
+    # Upcoming earnings - informational
+    if upcoming:
+        lines.append("Upcoming Earnings (Safe to Trade):")
+        for ticker, earnings in upcoming:
+            lines.append(f"  {ticker}: {earnings['date']} ({earnings['days_until']} days)")
+        lines.append("")
+
+    # No near-term earnings
+    if no_data:
+        lines.append(f"No Near-Term Earnings: {', '.join(set(no_data))}")
+
+    if not lines:
+        return "No earnings data available for tracked tickers."
 
     return "\n".join(lines)
 
