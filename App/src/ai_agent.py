@@ -574,7 +574,7 @@ def get_recommendation(context: dict, strategy: str, narratives: dict = None) ->
     for attempt in range(MAX_API_RETRIES + 1):
         try:
             message = client.messages.create(
-                model="claude-sonnet-4-20250514",
+                model="claude-opus-4-5-20251101",
                 max_tokens=2000,
                 temperature=0.3,  # Lower temp for more consistent reasoning
                 messages=[
