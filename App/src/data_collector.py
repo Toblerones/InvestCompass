@@ -16,6 +16,8 @@ Key Functions:
 
 import yfinance as yf
 import feedparser
+import re
+from difflib import SequenceMatcher
 from datetime import datetime, date, timedelta
 from typing import Optional
 from urllib.parse import quote_plus
@@ -584,6 +586,80 @@ SOURCE_QUALITY = {
 }
 
 
+# Material event keywords for targeted Google News queries
+# These filter out price movement noise at the source
+MATERIAL_EVENT_KEYWORDS = [
+    "earnings", "revenue", "profit", "quarterly",
+    "investigation", "lawsuit", "antitrust", "probe",
+    "acquisition", "merger", "partnership", "deal",
+    "CEO", "CFO", "executive", "leadership",
+    "layoffs", "restructuring", "job cuts",
+    "product launch", "announces", "unveils",
+    "regulatory", "fine", "settlement",
+    "data breach", "security", "hack",
+    "guidance", "forecast", "outlook"
+]
+
+
+def build_material_events_query(ticker: str) -> str:
+    """
+    Build targeted Google News query for material events only.
+
+    Instead of generic "{ticker} stock" which returns price movement noise,
+    this creates a query like "{ticker} (earnings OR acquisition OR lawsuit OR ...)"
+
+    Args:
+        ticker: Stock ticker symbol (e.g., "GOOGL")
+
+    Returns:
+        Formatted query string for Google News RSS
+    """
+    keywords = " OR ".join(MATERIAL_EVENT_KEYWORDS)
+    return f"{ticker} ({keywords})"
+
+
+def deduplicate_headlines(articles: list, threshold: float = 0.6) -> tuple[list, int]:
+    """
+    Remove duplicate articles based on headline similarity.
+
+    Uses fuzzy matching to identify and remove duplicate stories that appear
+    from multiple sources (e.g., "DOJ sues Google" and "DOJ files Google lawsuit").
+
+    Args:
+        articles: List of article dicts with 'title' field
+        threshold: Similarity ratio (0-1) above which articles are considered duplicates.
+                   Default 0.6 catches rewrites while keeping distinct stories.
+
+    Returns:
+        Tuple of (deduplicated_articles, removed_count)
+    """
+    if not articles:
+        return [], 0
+
+    unique = []
+    seen_normalized = []
+
+    for article in articles:
+        # Normalize headline for comparison
+        headline = article.get('title', '').lower()
+        headline = re.sub(r'[^\w\s]', '', headline)  # Remove punctuation
+        headline = ' '.join(headline.split())  # Normalize whitespace
+
+        # Check against all seen headlines
+        is_duplicate = False
+        for seen in seen_normalized:
+            if SequenceMatcher(None, headline, seen).ratio() > threshold:
+                is_duplicate = True
+                break
+
+        if not is_duplicate:
+            unique.append(article)
+            seen_normalized.append(headline)
+
+    removed_count = len(articles) - len(unique)
+    return unique, removed_count
+
+
 def get_source_quality(source: str) -> float:
     """Get quality score for a news source."""
     if not source:
@@ -795,9 +871,10 @@ def scan_news_enhanced(tickers: list[str], days: int = 14, max_articles: int = 2
                         "urls": [...]
                     }
                 ],
-                "raw_articles": [...],  # Original articles for reference
+                "raw_articles": [...],  # Deduplicated articles for reference
                 "stats": {
                     "total_fetched": 25,
+                    "duplicates_removed": 3,
                     "themes_found": 3,
                     "noise_filtered": 12
                 }
@@ -809,8 +886,8 @@ def scan_news_enhanced(tickers: list[str], days: int = 14, max_articles: int = 2
 
     for ticker in tickers:
         try:
-            # Build Google News RSS URL
-            query = quote_plus(f"{ticker} stock")
+            # Build Google News RSS URL with targeted material events query
+            query = quote_plus(build_material_events_query(ticker))
             url = f"https://news.google.com/rss/search?q={query}&hl=en-US&gl=US&ceid=US:en"
 
             feed = feedparser.parse(url)
@@ -832,6 +909,10 @@ def scan_news_enhanced(tickers: list[str], days: int = 14, max_articles: int = 2
                     'published': pub_date.strftime('%Y-%m-%d') if pub_date else '',
                     'source': _extract_source(entry.get('source', {}).get('title', '')),
                 })
+
+            # Deduplicate similar headlines before clustering
+            total_before_dedup = len(raw_articles)
+            raw_articles, dedup_count = deduplicate_headlines(raw_articles)
 
             # Cluster articles by theme
             clusters = cluster_news(raw_articles)
@@ -866,7 +947,8 @@ def scan_news_enhanced(tickers: list[str], days: int = 14, max_articles: int = 2
                 "themes": themes,
                 "raw_articles": raw_articles,
                 "stats": {
-                    "total_fetched": len(raw_articles),
+                    "total_fetched": total_before_dedup,
+                    "duplicates_removed": dedup_count,
                     "themes_found": len(themes),
                     "noise_filtered": noise_count
                 }
@@ -880,7 +962,7 @@ def scan_news_enhanced(tickers: list[str], days: int = 14, max_articles: int = 2
             result[ticker] = {
                 "themes": [],
                 "raw_articles": [],
-                "stats": {"total_fetched": 0, "themes_found": 0, "noise_filtered": 0}
+                "stats": {"total_fetched": 0, "duplicates_removed": 0, "themes_found": 0, "noise_filtered": 0}
             }
 
     return result
