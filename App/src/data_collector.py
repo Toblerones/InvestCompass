@@ -276,16 +276,19 @@ def calculate_earnings_proximity(earnings_date_str: Optional[str]) -> Optional[d
         today = date.today()
         days_until = (earnings_date - today).days
 
-        # Ignore past dates or very far future (>90 days)
-        if days_until < 0 or days_until > 90:
+        # Ignore very old past dates or very far future (>90 days)
+        # Allow recent past dates (up to -7 days) for post-earnings event detection
+        if days_until < -7 or days_until > 90:
             return None
 
         # Determine restrictions based on strategy rules
-        sell_restricted = days_until <= 3  # 3-day sell blackout
-        buy_restricted = days_until <= 7   # 7-day buy restriction
+        sell_restricted = 0 < days_until <= 3  # 3-day sell blackout (future only)
+        buy_restricted = 0 < days_until <= 7   # 7-day buy restriction (future only)
 
         # Classify status
-        if days_until <= 7:
+        if days_until <= 0:
+            status = 'RECENTLY_REPORTED'
+        elif days_until <= 7:
             status = 'IMMINENT'
         elif days_until <= 30:
             status = 'UPCOMING'
@@ -297,7 +300,8 @@ def calculate_earnings_proximity(earnings_date_str: Optional[str]) -> Optional[d
             'days_until': days_until,
             'sell_restricted': sell_restricted,
             'buy_restricted': buy_restricted,
-            'status': status
+            'status': status,
+            'recently_reported': days_until <= 0,
         }
     except (ValueError, TypeError):
         return None

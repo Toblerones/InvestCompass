@@ -392,11 +392,11 @@ def display_earnings_calendar(context: dict) -> None:
     has_imminent = False
     has_upcoming = False
 
-    # Check positions for imminent earnings
+    # Check positions for imminent earnings (future only, not recently reported)
     print()
     for pos in positions:
         earnings = pos.get('earnings')
-        if earnings and earnings['days_until'] <= 7:
+        if earnings and 0 < earnings['days_until'] <= 7:
             if not has_imminent:
                 print(colorize("  IMMINENT EARNINGS (Trading Restricted):", Colors.YELLOW + Colors.BOLD))
                 has_imminent = True
@@ -415,10 +415,10 @@ def display_earnings_calendar(context: dict) -> None:
             restriction_str = " | ".join(restrictions) if restrictions else ""
             print(f"    {ticker}: {date_str} ({days} days) [{restriction_str}]")
 
-    # Check opportunities for imminent earnings
+    # Check opportunities for imminent earnings (future only)
     for opp in opportunities:
         earnings = opp.get('earnings')
-        if earnings and earnings['days_until'] <= 7:
+        if earnings and 0 < earnings['days_until'] <= 7:
             if not has_imminent:
                 print(colorize("  IMMINENT EARNINGS (Trading Restricted):", Colors.YELLOW + Colors.BOLD))
                 has_imminent = True
@@ -626,6 +626,116 @@ def display_quick_check(portfolio: dict, context: dict) -> None:
 
 
 # =============================================================================
+# Material Events Display
+# =============================================================================
+
+def display_material_events(context: dict, recommendation: dict) -> None:
+    """
+    Display material events section when events are detected for holdings.
+
+    Shown FIRST in the output, before standard dashboard sections.
+    Only displays when material events are detected.
+
+    Args:
+        context: Market context from analyzer (contains material_events)
+        recommendation: AI recommendation (contains event-specific reasoning)
+    """
+    events = context.get('material_events', [])
+    if not events:
+        return
+
+    # Alert banner
+    event_count = len(events)
+    print()
+    print(colorize("=" * 60, Colors.RED + Colors.BOLD))
+    print(colorize(
+        f"  MATERIAL EVENT{'S' if event_count > 1 else ''} DETECTED"
+        f" - Analysis Required",
+        Colors.RED + Colors.BOLD
+    ))
+    print(colorize("=" * 60, Colors.RED + Colors.BOLD))
+
+    # Build position lookup from context
+    position_lookup = {}
+    for pos in context.get('current_positions', []):
+        position_lookup[pos.get('ticker', '')] = pos
+
+    for event in events:
+        ticker = event.get('ticker', '')
+        event_type = event.get('event_type', 'unknown').upper()
+        priority = event.get('priority', 'MEDIUM')
+        headline = event.get('headline', '')
+
+        # Event header
+        print()
+        priority_color = Colors.RED if priority == 'HIGH' else Colors.YELLOW
+        print(colorize(f"  [{priority}] {ticker}: {event_type}", priority_color + Colors.BOLD))
+        print(colorize("-" * 58, Colors.DIM))
+
+        # Event details
+        print(f"  {headline}")
+        article_count = event.get('article_count', 0)
+        frequency = event.get('frequency', '')
+        if article_count > 1 and frequency:
+            print(colorize(
+                f"  Coverage: {article_count} articles ({frequency} frequency)",
+                Colors.DIM
+            ))
+
+        # Position context
+        pos = position_lookup.get(ticker, {})
+        if pos:
+            pnl = pos.get('pnl_percent', 0)
+            days = pos.get('days_held', 0)
+            entry = pos.get('purchase_price', 0)
+            current = pos.get('current_price', 0)
+            qty = pos.get('quantity', 0)
+            sellable = pos.get('is_sellable', False)
+
+            pnl_color = Colors.GREEN if pnl >= 0 else Colors.RED
+            status = colorize("SELLABLE", Colors.GREEN) if sellable else colorize("LOCKED", Colors.RED)
+
+            print()
+            print(colorize("  YOUR POSITION:", Colors.BOLD))
+            print(f"    {qty} shares @ ${entry:.2f} entry -> ${current:.2f} now")
+            print(f"    P&L: {colorize(f'{pnl:+.1f}%', pnl_color)}  |  Days held: {days}  |  {status}")
+
+        # Show AI recommendation for this ticker
+        actions = recommendation.get('actions', [])
+        for action in actions:
+            if action.get('ticker', '').upper() == ticker.upper():
+                action_type = action.get('type', 'HOLD').upper()
+                reasoning = action.get('reasoning', '')
+
+                print()
+                if action_type == 'SELL':
+                    action_str = colorize(f"RECOMMENDATION: {action_type}", Colors.RED + Colors.BOLD)
+                elif action_type == 'BUY':
+                    action_str = colorize(f"RECOMMENDATION: {action_type}", Colors.GREEN + Colors.BOLD)
+                else:
+                    action_str = colorize(f"RECOMMENDATION: {action_type}", Colors.YELLOW + Colors.BOLD)
+
+                print(f"  {action_str}")
+
+                # Word-wrap reasoning
+                if reasoning:
+                    words = reasoning.split()
+                    line = "    "
+                    for word in words:
+                        if len(line) + len(word) > 70:
+                            print(line)
+                            line = "    "
+                        line += word + " "
+                    if line.strip():
+                        print(line)
+                break
+
+    print()
+    print(colorize("=" * 60, Colors.RED + Colors.BOLD))
+    print()
+
+
+# =============================================================================
 # Full Dashboard Display
 # =============================================================================
 
@@ -645,7 +755,10 @@ def display_full_dashboard(portfolio: dict, context: dict, recommendation: dict)
     print(colorize("║" + f" {date.today().isoformat()} ".center(58) + "║", Colors.CYAN))
     print(colorize("╚" + "═" * 58 + "╝", Colors.CYAN))
 
-    # Display all sections
+    # Display material events FIRST (if any detected)
+    display_material_events(context, recommendation)
+
+    # Display standard sections
     display_portfolio_status(portfolio, context)
     display_market_snapshot(context)
     display_news(context)

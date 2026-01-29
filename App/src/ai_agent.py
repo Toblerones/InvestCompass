@@ -39,7 +39,8 @@ RETRY_BACKOFF = 2.0
 # Prompt Building
 # =============================================================================
 
-def build_prompt(context: dict, strategy: str, narratives: dict = None) -> str:
+def build_prompt(context: dict, strategy: str, narratives: dict = None,
+                 market_data: dict = None) -> str:
     """
     Build the prompt for Claude API.
 
@@ -47,6 +48,7 @@ def build_prompt(context: dict, strategy: str, narratives: dict = None) -> str:
         context: Market context from analyzer.generate_market_context()
         strategy: Strategy principles text
         narratives: Optional narratives dictionary for context memory
+        market_data: Optional raw market data for event analysis
 
     Returns:
         Formatted prompt string
@@ -61,6 +63,26 @@ def build_prompt(context: dict, strategy: str, narratives: dict = None) -> str:
         all_tickers = list(set(held_tickers + top_3))
         if has_narratives(narratives):
             narratives_text = format_narratives_for_prompt(narratives, all_tickers)
+
+    # Format material events section (if any detected)
+    material_events_text = ""
+    material_events = context.get('material_events', [])
+    if material_events and market_data:
+        from .event_detector import build_event_analysis, format_events_for_prompt
+        # Build portfolio from context positions
+        portfolio_positions = []
+        for pos in context.get('current_positions', []):
+            portfolio_positions.append({
+                'ticker': pos.get('ticker', ''),
+                'quantity': pos.get('quantity', 0),
+                'purchase_price': pos.get('purchase_price', 0),
+                'purchase_date': pos.get('purchase_date', ''),
+            })
+        portfolio_for_events = {'positions': portfolio_positions}
+        event_analyses = build_event_analysis(
+            material_events, portfolio_for_events, market_data, narratives
+        )
+        material_events_text = format_events_for_prompt(event_analyses)
 
     # Format current positions
     positions_text = _format_positions(context.get('current_positions', []))
@@ -171,7 +193,7 @@ Example:
 - BUY NFLX: recommend "$689" (not more), reasoning: "Using $689 from MSFT sale"
 
 Your numbers must be accurate - the user will execute these trades.
-
+{material_events_text}
 YOUR TASK:
 Analyze the current situation and recommend specific actions (BUY/SELL/HOLD) with clear reasoning.
 Consider:
@@ -180,6 +202,7 @@ Consider:
 3. Entry timing - are there better opportunities?
 4. Transaction costs - is any swap worth the fees?
 5. Ongoing narratives - has any material theme resolved or emerged?
+6. Material events - if any events were detected above, address them with deep analysis
 
 NARRATIVE UPDATES (in addition to recommendations):
 After analyzing current conditions, update narratives for stocks you're tracking:
@@ -463,28 +486,28 @@ def _format_earnings_calendar(context: dict) -> str:
     upcoming = []   # 8-30 days (safe)
     no_data = []    # No data or > 30 days
 
-    # Check held positions
+    # Check held positions (only future earnings for calendar restrictions)
     for pos in positions:
         ticker = pos.get('ticker', '')
         earnings = pos.get('earnings')
         if earnings:
-            if earnings['days_until'] <= 7:
+            if 0 < earnings['days_until'] <= 7:
                 imminent.append((ticker, earnings, 'HELD'))
-            elif earnings['days_until'] <= 30:
+            elif 7 < earnings['days_until'] <= 30:
                 upcoming.append((ticker, earnings))
             else:
                 no_data.append(ticker)
         else:
             no_data.append(ticker)
 
-    # Check entry opportunities
+    # Check entry opportunities (only future earnings)
     for opp in opportunities:
         ticker = opp.get('ticker', '')
         earnings = opp.get('earnings')
         if earnings:
-            if earnings['days_until'] <= 7:
+            if 0 < earnings['days_until'] <= 7:
                 imminent.append((ticker, earnings, 'OPPORTUNITY'))
-            elif earnings['days_until'] <= 30:
+            elif 7 < earnings['days_until'] <= 30:
                 upcoming.append((ticker, earnings))
             else:
                 no_data.append(ticker)
@@ -528,7 +551,8 @@ def _format_earnings_calendar(context: dict) -> str:
 # Claude API Integration
 # =============================================================================
 
-def get_recommendation(context: dict, strategy: str, narratives: dict = None) -> dict:
+def get_recommendation(context: dict, strategy: str, narratives: dict = None,
+                       market_data: dict = None) -> dict:
     """
     Get AI recommendation from Claude API with retry logic.
 
@@ -536,6 +560,7 @@ def get_recommendation(context: dict, strategy: str, narratives: dict = None) ->
         context: Market context from analyzer
         strategy: Strategy principles text
         narratives: Optional narratives dictionary for context memory
+        market_data: Optional raw market data for event analysis
 
     Returns:
         Parsed recommendation dictionary (includes narrative_updates if provided)
@@ -564,7 +589,7 @@ def get_recommendation(context: dict, strategy: str, narratives: dict = None) ->
         }
 
     # Build the prompt
-    prompt = build_prompt(context, strategy, narratives)
+    prompt = build_prompt(context, strategy, narratives, market_data)
     client = anthropic.Anthropic(api_key=api_key)
 
     # Retry loop

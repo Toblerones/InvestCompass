@@ -22,6 +22,7 @@ from .utils import (
     days_held, is_sellable, days_until_sellable, unlock_date,
     calculate_pnl_percent, format_currency, format_percent
 )
+from .event_detector import detect_material_events
 
 
 # =============================================================================
@@ -515,6 +516,9 @@ def generate_market_context(market_data: dict, portfolio: dict, config: dict) ->
     # Get benchmark data for context
     benchmark = market_data.get('benchmark', {})
 
+    # Detect material events for holdings
+    material_events = detect_material_events(market_data, portfolio)
+
     return {
         'timestamp': market_data.get('timestamp', ''),
         'benchmark': benchmark,
@@ -525,6 +529,7 @@ def generate_market_context(market_data: dict, portfolio: dict, config: dict) ->
         'portfolio_lock_status': lock_status,
         'cash_available': portfolio.get('cash_available', 0),
         'news_highlights': news_highlights[:10],  # Limit to 10
+        'material_events': material_events,
         'config': {
             'max_positions': config.get('max_positions', 3),
             'transaction_fee': config.get('transaction_fee', 10),

@@ -79,9 +79,19 @@ def cmd_run(args):
     print(colorize("Analyzing market conditions...", Colors.DIM))
     context = generate_market_context(market_data, portfolio, config)
 
-    # Get AI recommendation (with narrative context)
+    # Log material events if detected
+    material_events = context.get('material_events', [])
+    if material_events:
+        event_count = len(material_events)
+        tickers = ', '.join(e['ticker'] for e in material_events)
+        print(colorize(
+            f"  Detected {event_count} material event(s) for: {tickers}",
+            Colors.YELLOW
+        ))
+
+    # Get AI recommendation (with narrative context + market data for event analysis)
     print(colorize("Getting AI recommendation...", Colors.DIM))
-    recommendation = get_recommendation(context, strategy, narratives)
+    recommendation = get_recommendation(context, strategy, narratives, market_data)
 
     # Process narrative updates from AI response
     narrative_updates = recommendation.get('narrative_updates', {})
