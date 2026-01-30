@@ -126,8 +126,8 @@ def cmd_check(args):
     print(colorize("\nFetching current prices...", Colors.DIM))
     tickers = config.get('watchlist', [])
 
-    # Only fetch for held positions + top stocks
-    held_tickers = [p.get('ticker') for p in portfolio.get('positions', [])]
+    # Only fetch for held positions + top stocks (lot-based: ticker is at position level)
+    held_tickers = [p.get('ticker', '') for p in portfolio.get('positions', [])]
     fetch_tickers = list(set(held_tickers + tickers[:5]))
 
     try:
@@ -222,37 +222,65 @@ def process_trade_input(user_input: str, portfolio: dict) -> str:
         except (IndexError, ValueError):
             return ""
 
-    # Handle sold command
+    # Handle sold command (lot-aware FIFO)
     if action == 'sold':
         # Format: sold TICKER QTY shares at PRICE [on DATE]
         try:
             ticker = words[1].upper()
-            qty = int(words[2])
-            # Find "at" to get price
+            qty = float(words[2])
             at_idx = words.index('at')
             price = float(words[at_idx + 1].replace('$', '').replace(',', ''))
 
-            # Remove position
+            # Find position by ticker
             positions = portfolio.get('positions', [])
+            position = None
+            pos_idx = None
             for i, pos in enumerate(positions):
                 if pos.get('ticker') == ticker:
-                    positions.pop(i)
+                    position = pos
+                    pos_idx = i
                     break
+
+            if position is None:
+                return f"No position found for {ticker}"
+
+            # FIFO: remove quantity from oldest lots first
+            remaining_to_sell = qty
+            lots = position.get('lots', [])
+            lots_removed = 0
+
+            for lot in lots[:]:  # iterate over copy
+                if remaining_to_sell <= 0:
+                    break
+                lot_qty = lot.get('quantity', 0)
+                if lot_qty <= remaining_to_sell:
+                    # Consume entire lot
+                    remaining_to_sell -= lot_qty
+                    lots.remove(lot)
+                    lots_removed += 1
+                else:
+                    # Partial lot consumption
+                    lot['quantity'] = lot_qty - remaining_to_sell
+                    remaining_to_sell = 0
+
+            # If no lots left, remove the position entirely
+            if not lots:
+                positions.pop(pos_idx)
 
             # Add proceeds to cash
             proceeds = qty * price
             portfolio['cash_available'] = portfolio.get('cash_available', 0) + proceeds
 
-            return f"Recorded: SOLD {ticker} {qty} shares @ ${price:.2f} (proceeds: ${proceeds:,.2f})"
+            return f"Recorded: SOLD {ticker} {qty} shares @ ${price:.2f} (proceeds: ${proceeds:,.2f}, {lots_removed} lot(s) consumed)"
         except (ValueError, IndexError):
             return ""
 
-    # Handle bought command
+    # Handle bought command (lot-aware)
     if action == 'bought':
         # Format: bought TICKER QTY shares at PRICE [on DATE]
         try:
             ticker = words[1].upper()
-            qty = int(words[2])
+            qty = float(words[2])
             at_idx = words.index('at')
             price = float(words[at_idx + 1].replace('$', '').replace(',', ''))
 
@@ -263,17 +291,32 @@ def process_trade_input(user_input: str, portfolio: dict) -> str:
                 if on_idx + 1 < len(words):
                     purchase_date = words[on_idx + 1]
 
-            # Add position
-            new_position = {
-                'ticker': ticker,
+            # New lot
+            new_lot = {
                 'quantity': qty,
                 'purchase_price': price,
                 'purchase_date': purchase_date,
             }
 
+            # Find existing position for this ticker, or create new one
             if 'positions' not in portfolio:
                 portfolio['positions'] = []
-            portfolio['positions'].append(new_position)
+
+            existing_position = None
+            for pos in portfolio['positions']:
+                if pos.get('ticker') == ticker:
+                    existing_position = pos
+                    break
+
+            if existing_position:
+                # Add lot to existing position
+                existing_position['lots'].append(new_lot)
+            else:
+                # Create new position with this lot
+                portfolio['positions'].append({
+                    'ticker': ticker,
+                    'lots': [new_lot],
+                })
 
             # Deduct cost from cash
             cost = qty * price
@@ -344,6 +387,71 @@ def cmd_init(args):
     return 0
 
 
+def cmd_migrate(args):
+    """
+    Migrate portfolio from legacy flat format to lot-based format.
+    """
+    from .utils import (
+        get_portfolio_file, load_json, save_json,
+        is_lot_based_format, migrate_portfolio_to_lots, validate_portfolio
+    )
+    import shutil
+
+    print_header("MIGRATE PORTFOLIO TO LOT-BASED FORMAT")
+
+    portfolio_path = get_portfolio_file()
+    if not portfolio_path.exists():
+        print(colorize("\nError: Portfolio file not found.", Colors.RED))
+        return 1
+
+    portfolio = load_json(portfolio_path)
+
+    # Check if already migrated
+    if is_lot_based_format(portfolio):
+        print(colorize("\n  Portfolio is already in lot-based format. No migration needed.", Colors.GREEN))
+        return 0
+
+    # Show current state
+    positions = portfolio.get('positions', [])
+    unique_tickers = set(p.get('ticker', '') for p in positions)
+    print(f"\n  Current format: {len(positions)} entries, {len(unique_tickers)} unique stocks")
+    for p in positions:
+        print(f"    {p.get('ticker', '')} - {p.get('quantity', 0)} shares @ ${p.get('purchase_price', 0):.2f} ({p.get('purchase_date', '')})")
+
+    # Migrate
+    backup_path = portfolio_path.with_suffix('.json.backup')
+    shutil.copy2(portfolio_path, backup_path)
+    print(colorize(f"\n  Backup created: {backup_path.name}", Colors.DIM))
+
+    migrated = migrate_portfolio_to_lots(portfolio)
+
+    # Validate
+    try:
+        validate_portfolio(migrated)
+    except ValueError as e:
+        print(colorize(f"\n  Migration validation failed: {e}", Colors.RED))
+        print(colorize("  Restoring backup...", Colors.YELLOW))
+        shutil.copy2(backup_path, portfolio_path)
+        return 1
+
+    # Save
+    save_json(portfolio_path, migrated)
+
+    # Show result
+    new_positions = migrated.get('positions', [])
+    print(colorize(f"\n  Migration successful!", Colors.GREEN))
+    print(f"  New format: {len(new_positions)} stocks")
+    for pos in new_positions:
+        ticker = pos.get('ticker', '')
+        lots = pos.get('lots', [])
+        total_qty = sum(l.get('quantity', 0) for l in lots)
+        print(f"    {ticker} - {total_qty} shares ({len(lots)} lot{'s' if len(lots) > 1 else ''})")
+        for i, lot in enumerate(lots):
+            print(f"      Lot {i+1}: {lot.get('quantity', 0)} @ ${lot.get('purchase_price', 0):.2f} ({lot.get('purchase_date', '')})")
+
+    return 0
+
+
 def cmd_help(args):
     """Display help information."""
     print("""
@@ -355,6 +463,7 @@ COMMANDS:
   python -m src.advisor              Run full analysis and get AI recommendations
   python -m src.advisor check        Quick portfolio status check
   python -m src.advisor confirm      Record executed trades
+  python -m src.advisor migrate      Migrate portfolio to lot-based format
   python -m src.advisor init         Initialize portfolio (first-time setup)
   python -m src.advisor --help       Show this help message
 
@@ -413,7 +522,7 @@ Examples:
         'command',
         nargs='?',
         default='run',
-        choices=['run', 'check', 'confirm', 'init', 'help'],
+        choices=['run', 'check', 'confirm', 'migrate', 'init', 'help'],
         help='Command to execute (default: run)'
     )
 
@@ -424,6 +533,7 @@ Examples:
         'run': cmd_run,
         'check': cmd_check,
         'confirm': cmd_confirm,
+        'migrate': cmd_migrate,
         'init': cmd_init,
         'help': cmd_help,
     }

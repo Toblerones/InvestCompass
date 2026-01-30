@@ -69,14 +69,16 @@ def build_prompt(context: dict, strategy: str, narratives: dict = None,
     material_events = context.get('material_events', [])
     if material_events and market_data:
         from .event_detector import build_event_analysis, format_events_for_prompt
-        # Build portfolio from context positions
+        # Build lot-based portfolio from context positions for event analysis
         portfolio_positions = []
         for pos in context.get('current_positions', []):
             portfolio_positions.append({
                 'ticker': pos.get('ticker', ''),
-                'quantity': pos.get('quantity', 0),
-                'purchase_price': pos.get('purchase_price', 0),
-                'purchase_date': pos.get('purchase_date', ''),
+                'lots': pos.get('lots', [{
+                    'quantity': pos.get('total_quantity', 0),
+                    'purchase_price': pos.get('average_cost', 0),
+                    'purchase_date': pos.get('lots', [{}])[0].get('purchase_date', '') if pos.get('lots') else '',
+                }]),
             })
         portfolio_for_events = {'positions': portfolio_positions}
         event_analyses = build_event_analysis(
@@ -124,6 +126,8 @@ REGULATORY CONSTRAINT (IMMUTABLE):
 - Minimum 30-day hold from purchase (FIFO rule)
 - Cannot sell positions held < 30 days under ANY circumstance
 - This is a hard constraint - never recommend selling locked positions
+- Positions show lot breakdown. FIFO is enforced: oldest sellable lots are sold first
+- When recommending SELL, specify quantity. Only sellable lots can be sold
 
 CURRENT PORTFOLIO:
 {positions_text}
@@ -240,25 +244,44 @@ Important: Your response must be valid JSON only, no markdown or other formattin
 
 
 def _format_positions(positions: list) -> str:
-    """Format current positions for prompt."""
+    """Format consolidated positions (lot-based) for prompt."""
     if not positions:
         return "No current positions."
 
     lines = []
     for pos in positions:
         ticker = pos.get('ticker', '')
-        qty = pos.get('quantity', 0)
-        purchase = pos.get('purchase_price', 0)
+        total_qty = pos.get('total_quantity', 0)
+        avg_cost = pos.get('average_cost', 0)
         current = pos.get('current_price', 0)
         pnl = pos.get('pnl_percent', 0)
-        days = pos.get('days_held', 0)
         rank = pos.get('rank', 'N/A')
-        sellable = "SELLABLE" if pos.get('is_sellable', False) else "LOCKED"
+        lock_status = pos.get('lock_status', 'LOCKED')
+        sellable_qty = pos.get('sellable_quantity', 0)
+        lots = pos.get('lots', [])
 
         lines.append(
-            f"- {ticker}: {qty} shares @ ${purchase:.2f} (now ${current:.2f}), "
-            f"P&L: {pnl:+.1f}%, Days held: {days}, Rank: #{rank}, Status: {sellable}"
+            f"- {ticker}: {total_qty} shares total, avg cost ${avg_cost:.2f} (now ${current:.2f}), "
+            f"P&L: {pnl:+.1f}%, Rank: #{rank}, Status: {lock_status}"
         )
+
+        if lock_status == 'PARTIAL_LOCK':
+            lines.append(
+                f"  Sellable: {sellable_qty} of {total_qty} shares (FIFO order)"
+            )
+
+        # Show lot breakdown
+        if len(lots) > 1:
+            for i, lot in enumerate(lots):
+                lot_qty = lot.get('quantity', 0)
+                lot_price = lot.get('purchase_price', 0)
+                lot_days = lot.get('days_held', 0)
+                lot_pnl = lot.get('pnl_percent', 0)
+                lot_sellable = "SELLABLE" if lot.get('is_sellable', False) else "LOCKED"
+                lines.append(
+                    f"  Lot {i+1}: {lot_qty} shares @ ${lot_price:.2f} "
+                    f"({lot_days}d, {lot_pnl:+.1f}%) {lot_sellable}"
+                )
 
         # Add exit signals/warnings
         for signal in pos.get('exit_signals', []):
@@ -324,13 +347,14 @@ def _format_lock_status(lock_status: dict) -> str:
     """Format portfolio lock status for prompt."""
     total = lock_status.get('total_positions', 0)
     sellable = lock_status.get('sellable_count', 0)
+    partially = lock_status.get('partially_sellable_count', 0)
     locked = lock_status.get('locked_count', 0)
     next_unlock = lock_status.get('next_unlock_date', '')
 
     if total == 0:
         return "No positions to evaluate."
 
-    status = f"Total: {total} positions, Sellable: {sellable}, Locked: {locked}"
+    status = f"Total: {total} stocks, Fully sellable: {sellable}, Partially sellable: {partially}, Fully locked: {locked}"
     if next_unlock:
         status += f"\nNext unlock date: {next_unlock}"
 
@@ -438,10 +462,12 @@ def _format_price_context(context: dict) -> str:
 
 def _format_holdings_for_cashflow(positions: list, transaction_fee: float) -> str:
     """
-    Format current holdings with prices for cash flow calculations.
+    Format consolidated holdings with prices for cash flow calculations.
+
+    Shows sellable quantity separately from total for accurate SELL planning.
 
     Args:
-        positions: List of current positions with current_price
+        positions: List of consolidated positions with lots
         transaction_fee: Fee per transaction
 
     Returns:
@@ -453,17 +479,18 @@ def _format_holdings_for_cashflow(positions: list, transaction_fee: float) -> st
     lines = []
     for pos in positions:
         ticker = pos.get('ticker', '')
-        qty = pos.get('quantity', 0)
+        total_qty = pos.get('total_quantity', 0)
+        sellable_qty = pos.get('sellable_quantity', 0)
         current = pos.get('current_price', 0)
-        is_sellable = pos.get('is_sellable', False)
+        lock_status = pos.get('lock_status', 'LOCKED')
 
-        gross_value = qty * current
-        net_proceeds = gross_value - transaction_fee
-        status = "SELLABLE" if is_sellable else "LOCKED"
+        sellable_value = sellable_qty * current
+        net_proceeds = sellable_value - transaction_fee if sellable_qty > 0 else 0
 
         lines.append(
-            f"- {ticker}: {qty} shares x ${current:.2f} = ${gross_value:.2f} "
-            f"(net after fee: ${net_proceeds:.2f}) [{status}]"
+            f"- {ticker}: {total_qty} total shares ({sellable_qty} sellable) x ${current:.2f} "
+            f"= ${sellable_value:.2f} sellable value "
+            f"(net after fee: ${net_proceeds:.2f}) [{lock_status}]"
         )
 
     return "\n".join(lines)
@@ -762,7 +789,7 @@ def validate_actions(actions: list, context: dict) -> list:
     config = context.get('config', {})
     transaction_fee = config.get('transaction_fee', 10)
 
-    # Build position lookup for quick access
+    # Build position lookup for quick access (no overwrite - one entry per ticker)
     position_lookup = {pos.get('ticker'): pos for pos in positions}
 
     # Track running cash (starts with available cash, increases with SELLs)
@@ -772,24 +799,26 @@ def validate_actions(actions: list, context: dict) -> list:
         action_type = action.get('type', '').upper()
         ticker = action.get('ticker', '')
 
-        # Check SELL actions against FIFO
+        # Check SELL actions against FIFO (lot-aware)
         if action_type == 'SELL':
             position_lock = lock_status.get(ticker, {})
-            if position_lock and not position_lock.get('is_sellable', True):
-                # Mark as invalid - position is locked
+            sellable_qty = position_lock.get('sellable_quantity', 0)
+
+            if position_lock and sellable_qty <= 0:
+                # Mark as invalid - no sellable lots
                 action['valid'] = False
                 action['validation_error'] = (
-                    f"INVALID: {ticker} is LOCKED (held {position_lock.get('days_held', 0)} days). "
+                    f"INVALID: {ticker} is LOCKED (all lots locked). "
                     f"Cannot sell until {position_lock.get('unlock_date', 'N/A')}."
                 )
             else:
                 action['valid'] = True
 
-                # Calculate proceeds and add to running cash
+                # Calculate proceeds from sellable quantity only
                 pos = position_lookup.get(ticker, {})
-                qty = pos.get('quantity', 0)
+                sell_qty = sellable_qty  # Can only sell FIFO-eligible lots
                 current_price = pos.get('current_price', 0)
-                gross_value = qty * current_price
+                gross_value = sell_qty * current_price
                 net_proceeds = gross_value - transaction_fee
 
                 # Add proceeds to running cash for subsequent BUY validation
@@ -802,7 +831,7 @@ def validate_actions(actions: list, context: dict) -> list:
                     if diff > 50:
                         action['validation_warning'] = (
                             f"AI calculated ${ai_proceeds:.2f} proceeds, "
-                            f"actual would be ${net_proceeds:.2f}"
+                            f"actual would be ${net_proceeds:.2f} ({sell_qty} sellable shares)"
                         )
 
         elif action_type == 'BUY':

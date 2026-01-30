@@ -3,7 +3,9 @@
     "allow": [
       "Bash(python -m src.advisor:*)",
       "Bash(python -c:*)",
-      "Bash(python advisor.py:*)"
+      "Bash(python advisor.py:*)",
+      "Bash(python -m pytest:*)",
+      "Bash(python:*)"
     ]
   }
 }

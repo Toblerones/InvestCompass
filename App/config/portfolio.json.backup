@@ -1,0 +1,25 @@
+{
+  "positions": [
+    {
+      "ticker": "MSFT",
+      "quantity": 1.5,
+      "purchase_price": 507.6,
+      "purchase_date": "2025-11-18",
+      "notes": "Initial position"
+    },
+    {
+      "ticker": "NVDA",
+      "quantity": 1,
+      "purchase_price": 191.83,
+      "purchase_date": "2026-01-30"
+    },
+    {
+      "ticker": "MSFT",
+      "quantity": 1,
+      "purchase_price": 434.0,
+      "purchase_date": "2026-01-30"
+    }
+  ],
+  "cash_available": 274.16999999999996,
+  "last_updated": "2026-01-30"
+}

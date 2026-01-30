@@ -52,7 +52,8 @@ def detect_material_events(market_data: dict, portfolio: dict) -> list:
         List of event dicts, sorted by priority
     """
     events = []
-    holdings = {p['ticker'] for p in portfolio.get('positions', [])}
+    # Lot-based format: each position has a 'ticker' key (one per stock)
+    holdings = {p.get('ticker', '') for p in portfolio.get('positions', [])}
 
     for ticker in holdings:
         ticker_data = market_data.get('tickers', {}).get(ticker, {})
@@ -258,9 +259,9 @@ def build_event_analysis(events: list, portfolio: dict, market_data: dict,
     narratives = narratives or {}
     analyses = []
 
-    # Build position lookup
+    # Build position lookup (lot-based: one entry per ticker)
     position_lookup = {
-        p['ticker']: p for p in portfolio.get('positions', [])
+        p.get('ticker', ''): p for p in portfolio.get('positions', [])
     }
 
     for event in events:
@@ -298,32 +299,50 @@ def build_event_analysis(events: list, portfolio: dict, market_data: dict,
 
 
 def _build_position_context(position: dict, ticker_data: dict) -> dict:
-    """Build position-specific context for analysis."""
+    """Build position-specific context for analysis (lot-based)."""
     current_price = ticker_data.get('price', {}).get('current_price', 0)
-    entry_price = position.get('purchase_price', 0)
-    quantity = position.get('quantity', 0)
 
+    # Lot-based: compute aggregates from lots
+    lots = position.get('lots', [])
+    total_quantity = 0
+    total_cost = 0
+    sellable_quantity = 0
+    oldest_days_held = 0
+
+    for lot in lots:
+        qty = lot.get('quantity', 0)
+        price = lot.get('purchase_price', 0)
+        total_quantity += qty
+        total_cost += qty * price
+
+        pdate = lot.get('purchase_date', '')
+        lot_days = 0
+        if pdate:
+            try:
+                lot_days = (date.today() - datetime.strptime(pdate, '%Y-%m-%d').date()).days
+            except (ValueError, TypeError):
+                pass
+
+        if lot_days > oldest_days_held:
+            oldest_days_held = lot_days
+        if lot_days >= 30:
+            sellable_quantity += qty
+
+    average_cost = total_cost / total_quantity if total_quantity > 0 else 0
     pnl_pct = 0
-    if entry_price > 0:
-        pnl_pct = ((current_price - entry_price) / entry_price) * 100
-
-    purchase_date = position.get('purchase_date', '')
-    days_held = 0
-    if purchase_date:
-        try:
-            days_held = (date.today() - datetime.strptime(purchase_date, '%Y-%m-%d').date()).days
-        except (ValueError, TypeError):
-            pass
+    if average_cost > 0:
+        pnl_pct = ((current_price - average_cost) / average_cost) * 100
 
     return {
-        'quantity': quantity,
-        'entry_price': entry_price,
+        'quantity': total_quantity,
+        'entry_price': round(average_cost, 2),
         'current_price': current_price,
         'pnl_pct': round(pnl_pct, 2),
-        'pnl_dollars': round((current_price - entry_price) * quantity, 2),
-        'days_held': days_held,
-        'is_sellable': days_held >= 30,
-        'position_value': round(current_price * quantity, 2),
+        'pnl_dollars': round((current_price - average_cost) * total_quantity, 2),
+        'days_held': oldest_days_held,
+        'is_sellable': sellable_quantity > 0,
+        'sellable_quantity': sellable_quantity,
+        'position_value': round(current_price * total_quantity, 2),
     }
 
 

@@ -20,7 +20,8 @@ from datetime import date
 from typing import Optional
 from .utils import (
     days_held, is_sellable, days_until_sellable, unlock_date,
-    calculate_pnl_percent, format_currency, format_percent
+    calculate_pnl_percent, format_currency, format_percent,
+    consolidate_positions
 )
 from .event_detector import detect_material_events
 
@@ -164,71 +165,77 @@ def calculate_rankings(market_data: dict) -> dict:
 # FIFO Eligibility
 # =============================================================================
 
-def check_fifo_eligibility(positions: list, min_hold_days: int = 30) -> dict:
+def check_fifo_eligibility(consolidated_positions: list, min_hold_days: int = 30) -> dict:
     """
-    Check FIFO eligibility for all positions.
+    Check FIFO eligibility for consolidated positions (lot-based).
 
     Args:
-        positions: List of position dictionaries
+        consolidated_positions: List of consolidated position dicts (from consolidate_positions)
         min_hold_days: Minimum days to hold (default 30)
 
     Returns:
-        Dictionary with eligibility info for each position
+        Dictionary with eligibility info for each ticker
     """
     result = {}
 
-    for pos in positions:
+    for pos in consolidated_positions:
         ticker = pos.get('ticker', 'UNKNOWN')
-        purchase_date = pos.get('purchase_date', '')
+        lots = pos.get('lots', [])
+        lock_status = pos.get('lock_status', 'LOCKED')
+        sellable_qty = pos.get('sellable_quantity', 0)
+        total_qty = pos.get('total_quantity', 0)
 
-        held = days_held(purchase_date)
-        sellable = is_sellable(purchase_date, min_hold_days)
-        days_remaining = days_until_sellable(purchase_date, min_hold_days)
-        unlock = unlock_date(purchase_date, min_hold_days)
+        # Use oldest lot for backward-compatible days_held/is_sellable
+        oldest_lot = lots[0] if lots else {}
 
         result[ticker] = {
-            'days_held': held,
-            'is_sellable': sellable,
-            'days_until_sellable': days_remaining,
-            'unlock_date': unlock.isoformat(),
-            'status': 'SELLABLE' if sellable else 'LOCKED',
-            'purchase_date': purchase_date,
+            'days_held': oldest_lot.get('days_held', 0),
+            'is_sellable': sellable_qty > 0,
+            'sellable_quantity': sellable_qty,
+            'locked_quantity': pos.get('locked_quantity', 0),
+            'total_quantity': total_qty,
+            'lock_status': lock_status,
+            'days_until_sellable': oldest_lot.get('days_until_sellable', 0),
+            'unlock_date': pos.get('next_unlock_date', ''),
+            'status': lock_status,
+            'lots': lots,
         }
 
     return result
 
 
-def get_portfolio_lock_status(positions: list, min_hold_days: int = 30) -> dict:
+def get_portfolio_lock_status(consolidated_positions: list, min_hold_days: int = 30) -> dict:
     """
-    Get overall portfolio lock status summary.
+    Get overall portfolio lock status summary (lot-based).
 
     Args:
-        positions: List of position dictionaries
+        consolidated_positions: List of consolidated position dicts
         min_hold_days: Minimum days to hold
 
     Returns:
         Summary of portfolio lock status
     """
-    eligibility = check_fifo_eligibility(positions, min_hold_days)
+    eligibility = check_fifo_eligibility(consolidated_positions, min_hold_days)
 
-    total = len(positions)
-    sellable = sum(1 for e in eligibility.values() if e['is_sellable'])
-    locked = total - sellable
+    total = len(consolidated_positions)
+    fully_sellable = sum(1 for e in eligibility.values() if e['lock_status'] == 'SELLABLE')
+    partially_sellable = sum(1 for e in eligibility.values() if e['lock_status'] == 'PARTIAL_LOCK')
+    fully_locked = sum(1 for e in eligibility.values() if e['lock_status'] == 'LOCKED')
 
     # Find next unlock date
     next_unlock = None
     for ticker, info in eligibility.items():
-        if not info['is_sellable']:
-            unlock = info['unlock_date']
-            if next_unlock is None or unlock < next_unlock:
-                next_unlock = unlock
+        unlock = info.get('unlock_date', '')
+        if unlock and (next_unlock is None or unlock < next_unlock):
+            next_unlock = unlock
 
     return {
         'total_positions': total,
-        'sellable_count': sellable,
-        'locked_count': locked,
-        'all_locked': locked == total and total > 0,
-        'all_sellable': sellable == total,
+        'sellable_count': fully_sellable,
+        'partially_sellable_count': partially_sellable,
+        'locked_count': fully_locked,
+        'all_locked': fully_locked == total and total > 0,
+        'all_sellable': fully_sellable == total,
         'next_unlock_date': next_unlock,
         'positions': eligibility,
     }
@@ -336,27 +343,33 @@ def analyze_entry_signals(ticker: str, data: dict, config: dict) -> dict:
     }
 
 
-def analyze_exit_signals(position: dict, data: dict, config: dict) -> dict:
+def analyze_exit_signals(consolidated_position: dict, data: dict, config: dict) -> dict:
     """
-    Analyze exit signals for a held position.
+    Analyze exit signals for a consolidated position (lot-based).
+
+    Checks stop-loss and profit target at both position level (average cost)
+    and lot level (individual lot cost basis). Lot-level signals are more
+    actionable since FIFO sells oldest lot first.
 
     Args:
-        position: Position dictionary
+        consolidated_position: Consolidated position dict with lots
         data: Ticker data from market_data
         config: Configuration dictionary
 
     Returns:
-        Exit signal analysis
+        Exit signal analysis with lot-level detail
     """
-    ticker = position.get('ticker', '')
-    purchase_price = position.get('purchase_price', 0)
-    purchase_date = position.get('purchase_date', '')
+    ticker = consolidated_position.get('ticker', '')
+    average_cost = consolidated_position.get('average_cost', 0)
+    lots = consolidated_position.get('lots', [])
+    lock_status = consolidated_position.get('lock_status', 'LOCKED')
+    sellable_qty = consolidated_position.get('sellable_quantity', 0)
 
     price_data = data.get('price', {})
     current_price = price_data.get('current_price', 0)
 
-    # Calculate P&L
-    pnl_percent = calculate_pnl_percent(purchase_price, current_price)
+    # Position-level P&L (blended)
+    pnl_percent = calculate_pnl_percent(average_cost, current_price)
 
     # Get config thresholds
     stop_loss = config.get('stop_loss_percent', -10)
@@ -366,30 +379,51 @@ def analyze_exit_signals(position: dict, data: dict, config: dict) -> dict:
     signals = []
     warnings = []
 
-    # Check FIFO eligibility first
-    held = days_held(purchase_date)
-    sellable = is_sellable(purchase_date, min_hold)
+    # Overall lock status
+    if lock_status == 'LOCKED':
+        warnings.append(f"LOCKED: All lots locked (FIFO rule)")
+    elif lock_status == 'PARTIAL_LOCK':
+        warnings.append(
+            f"PARTIAL LOCK: {sellable_qty} of {consolidated_position.get('total_quantity', 0)} shares sellable"
+        )
 
-    if not sellable:
-        days_left = days_until_sellable(purchase_date, min_hold)
-        warnings.append(f"LOCKED: Cannot sell for {days_left} more days (FIFO rule)")
+    # Lot-level analysis (more granular signals)
+    for i, lot in enumerate(lots):
+        lot_price = lot.get('purchase_price', 0)
+        lot_pnl = calculate_pnl_percent(lot_price, current_price)
+        lot_sellable = lot.get('is_sellable', False)
+        lot_qty = lot.get('quantity', 0)
+        lot_days = lot.get('days_held', 0)
 
-    # Stop Loss Check
-    if pnl_percent <= stop_loss:
-        if sellable:
-            signals.append(f"STOP LOSS triggered: {format_percent(pnl_percent)} (threshold: {stop_loss}%)")
-        else:
-            warnings.append(f"Stop loss would trigger ({format_percent(pnl_percent)}) but position is LOCKED")
+        if lot_pnl <= stop_loss:
+            if lot_sellable:
+                signals.append(
+                    f"STOP LOSS Lot {i+1}: {lot_qty} shares @ ${lot_price:.2f}, "
+                    f"{format_percent(lot_pnl)} (threshold: {stop_loss}%)"
+                )
+            else:
+                warnings.append(
+                    f"Stop loss would trigger on Lot {i+1} ({format_percent(lot_pnl)}) but LOCKED ({lot_days}d held)"
+                )
 
-    # Profit Target Check
-    if pnl_percent >= profit_target:
-        if sellable:
-            signals.append(f"PROFIT TARGET reached: {format_percent(pnl_percent)} (threshold: +{profit_target}%)")
-        else:
-            warnings.append(f"Profit target reached ({format_percent(pnl_percent)}) but position is LOCKED")
+        if lot_pnl >= profit_target:
+            if lot_sellable:
+                signals.append(
+                    f"PROFIT TARGET Lot {i+1}: {lot_qty} shares @ ${lot_price:.2f}, "
+                    f"{format_percent(lot_pnl)} (threshold: +{profit_target}%)"
+                )
+            else:
+                warnings.append(
+                    f"Profit target reached on Lot {i+1} ({format_percent(lot_pnl)}) but LOCKED"
+                )
+
+    # Use oldest lot for backward-compatible days_held / is_sellable
+    oldest_lot = lots[0] if lots else {}
+    oldest_days_held = oldest_lot.get('days_held', 0)
+    any_sellable = sellable_qty > 0
 
     # Overall assessment
-    if not sellable:
+    if lock_status == 'LOCKED':
         recommendation = 'HOLD (LOCKED)'
     elif signals:
         recommendation = 'CONSIDER EXIT'
@@ -403,9 +437,11 @@ def analyze_exit_signals(position: dict, data: dict, config: dict) -> dict:
         'warnings': warnings,
         'pnl_percent': pnl_percent,
         'current_price': current_price,
-        'purchase_price': purchase_price,
-        'days_held': held,
-        'is_sellable': sellable,
+        'purchase_price': average_cost,
+        'days_held': oldest_days_held,
+        'is_sellable': any_sellable,
+        'lock_status': lock_status,
+        'sellable_quantity': sellable_qty,
     }
 
 
@@ -431,29 +467,47 @@ def generate_market_context(market_data: dict, portfolio: dict, config: dict) ->
     # Get top 3 stocks
     top_3 = [t for t, r in rankings.items() if r['is_top_3']]
 
-    # Analyze current positions
-    positions = portfolio.get('positions', [])
+    # Analyze current positions (lot-based consolidation)
+    raw_positions = portfolio.get('positions', [])
+    min_hold_days = config.get('min_hold_days', 30)
+    consolidated = consolidate_positions(raw_positions, min_hold_days)
     position_analysis = []
 
-    for pos in positions:
+    for pos in consolidated:
         ticker = pos.get('ticker', '')
         ticker_data = market_data.get('tickers', {}).get(ticker, {})
 
         # Get ranking info
         rank_info = rankings.get(ticker, {'rank': 'N/A', 'score': 0})
 
-        # Get exit signals
+        # Get exit signals (now lot-aware)
         exit_analysis = analyze_exit_signals(pos, ticker_data, config)
 
         # Get price context
         price_ctx = ticker_data.get('price_context', {})
 
+        # Compute per-lot P&L with current price
+        current_price = ticker_data.get('price', {}).get('current_price', 0)
+        lots_with_pnl = []
+        for lot in pos.get('lots', []):
+            lot_copy = dict(lot)
+            if current_price > 0 and lot['purchase_price'] > 0:
+                lot_copy['pnl_percent'] = round(
+                    ((current_price - lot['purchase_price']) / lot['purchase_price']) * 100, 2
+                )
+            else:
+                lot_copy['pnl_percent'] = 0
+            lots_with_pnl.append(lot_copy)
+
         position_analysis.append({
             'ticker': ticker,
-            'quantity': pos.get('quantity', 0),
-            'purchase_price': pos.get('purchase_price', 0),
-            'purchase_date': pos.get('purchase_date', ''),
-            'current_price': ticker_data.get('price', {}).get('current_price', 0),
+            'total_quantity': pos.get('total_quantity', 0),
+            'average_cost': pos.get('average_cost', 0),
+            'lots': lots_with_pnl,
+            'sellable_quantity': pos.get('sellable_quantity', 0),
+            'locked_quantity': pos.get('locked_quantity', 0),
+            'lock_status': pos.get('lock_status', 'LOCKED'),
+            'current_price': current_price,
             'rank': rank_info.get('rank', 'N/A'),
             'score': rank_info.get('score', 0),
             'pnl_percent': exit_analysis.get('pnl_percent', 0),
@@ -468,7 +522,7 @@ def generate_market_context(market_data: dict, portfolio: dict, config: dict) ->
         })
 
     # Analyze entry opportunities for top 3 not in portfolio
-    held_tickers = [p.get('ticker') for p in positions]
+    held_tickers = [p.get('ticker') for p in consolidated]
     entry_opportunities = []
 
     for ticker in top_3:
@@ -493,8 +547,8 @@ def generate_market_context(market_data: dict, portfolio: dict, config: dict) ->
                 'earnings': ticker_data.get('earnings'),  # Earnings proximity data
             })
 
-    # Portfolio lock status
-    lock_status = get_portfolio_lock_status(positions, config.get('min_hold_days', 30))
+    # Portfolio lock status (uses consolidated positions)
+    lock_status = get_portfolio_lock_status(consolidated, config.get('min_hold_days', 30))
 
     # Compile news highlights (enhanced with themes)
     news_highlights = []

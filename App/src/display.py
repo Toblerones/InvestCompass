@@ -100,7 +100,9 @@ def print_divider(width: int = 60) -> None:
 
 def display_portfolio_status(portfolio: dict, context: dict) -> None:
     """
-    Display current portfolio status.
+    Display current portfolio status (consolidated lot-based view).
+
+    Shows one row per stock with lot breakdown underneath.
 
     Args:
         portfolio: Portfolio dictionary
@@ -123,34 +125,52 @@ def display_portfolio_status(portfolio: dict, context: dict) -> None:
 
     # Print position table header
     print()
-    header = f"{'Ticker':<8}{'Qty':>6}{'Entry':>10}{'Current':>10}{'P&L':>10}{'Days':>6}{'Rank':>6}{'Status':>10}"
+    header = f"{'Ticker':<8}{'Qty':>6}{'Avg Cost':>10}{'Current':>10}{'P&L':>10}{'Rank':>6}{'Status':>14}"
     print(colorize(header, Colors.BOLD))
     print_divider()
 
     for pos in positions:
         ticker = pos.get('ticker', '')
-        qty = pos.get('quantity', 0)
-        purchase = pos.get('purchase_price', 0)
+        total_qty = pos.get('total_quantity', 0)
+        avg_cost = pos.get('average_cost', 0)
         current = pos.get('current_price', 0)
         pnl_pct = pos.get('pnl_percent', 0)
-        days = pos.get('days_held', 0)
         rank = pos.get('rank', 'N/A')
-        sellable = pos.get('is_sellable', False)
+        pos_lock_status = pos.get('lock_status', 'LOCKED')
+        lots = pos.get('lots', [])
 
         # Calculate value
-        position_value = qty * current
-        position_cost = qty * purchase
+        position_value = total_qty * current
+        position_cost = total_qty * avg_cost
         total_value += position_value
         total_cost += position_cost
 
         # Format P&L with color
         pnl_str = color_value(pnl_pct)
 
-        # Format status
-        status = "SELLABLE" if sellable else "LOCKED"
-        status_str = color_status(status)
+        # Format status with color
+        status_str = color_status(pos_lock_status)
 
-        print(f"{ticker:<8}{qty:>6}{purchase:>10.2f}{current:>10.2f}{pnl_str:>18}{days:>6}{'#'+str(rank):>6}{status_str:>18}")
+        print(f"{ticker:<8}{total_qty:>6}{avg_cost:>10.2f}{current:>10.2f}{pnl_str:>18}{'#'+str(rank):>6}{status_str:>22}")
+
+        # Show lot breakdown (if multiple lots)
+        if len(lots) > 1:
+            for i, lot in enumerate(lots):
+                lot_qty = lot.get('quantity', 0)
+                lot_price = lot.get('purchase_price', 0)
+                lot_days = lot.get('days_held', 0)
+                lot_pnl = lot.get('pnl_percent', 0)
+                lot_sellable = lot.get('is_sellable', False)
+                is_last = (i == len(lots) - 1)
+                prefix = "  └─" if is_last else "  ├─"
+
+                lot_status = colorize("SELLABLE", Colors.GREEN) if lot_sellable else colorize("LOCKED", Colors.RED)
+                lot_pnl_str = color_value(lot_pnl)
+
+                print(colorize(
+                    f"{prefix} Lot {i+1}: {lot_qty} @ {lot_price:.2f} ({lot_days}d, ",
+                    Colors.DIM
+                ) + f"{lot_pnl_str}" + colorize(")", Colors.DIM) + f"  {lot_status}")
 
         # Show exit signals if any
         for signal in pos.get('exit_signals', []):
@@ -166,12 +186,32 @@ def display_portfolio_status(portfolio: dict, context: dict) -> None:
     print(f"  {'Cash Available:':<20} ${cash:,.2f}")
     print(f"  {'Total P&L:':<20} {color_value(total_pnl_pct)} ({'+' if total_pnl >= 0 else ''}${total_pnl:,.2f})")
 
-    # Lock status summary
+    # Lock status summary (lot-aware)
     sellable_count = lock_status.get('sellable_count', 0)
+    partially_count = lock_status.get('partially_sellable_count', 0)
     locked_count = lock_status.get('locked_count', 0)
     next_unlock = lock_status.get('next_unlock_date', '')
 
-    print(f"\n  {'Positions:':<20} {sellable_count} sellable, {locked_count} locked")
+    status_parts = []
+    if sellable_count > 0:
+        status_parts.append(f"{sellable_count} sellable")
+    if partially_count > 0:
+        status_parts.append(f"{partially_count} partially sellable")
+    if locked_count > 0:
+        status_parts.append(f"{locked_count} locked")
+
+    print(f"\n  {'Stocks:':<20} {len(positions)} ({', '.join(status_parts)})")
+
+    # Show partially sellable detail
+    for pos in positions:
+        if pos.get('lock_status') == 'PARTIAL_LOCK':
+            sellable_qty = pos.get('sellable_quantity', 0)
+            total_qty = pos.get('total_quantity', 0)
+            print(colorize(
+                f"  {'':>20} {pos['ticker']}: {sellable_qty} of {total_qty} shares sellable",
+                Colors.YELLOW
+            ))
+
     if next_unlock:
         print(f"  {'Next Unlock:':<20} {next_unlock}")
 
@@ -191,7 +231,7 @@ def display_market_snapshot(context: dict) -> None:
 
     rankings = context.get('rankings', {})
     top_3 = context.get('top_3_tickers', [])
-    held_tickers = [p.get('ticker') for p in context.get('current_positions', [])]
+    held_tickers = [p.get('ticker', '') for p in context.get('current_positions', [])]
 
     if not rankings:
         print("\n  No market data available.")
@@ -582,9 +622,18 @@ def display_quick_check(portfolio: dict, context: dict) -> None:
     # Quick summary
     total_pnl = sum(p.get('pnl_percent', 0) for p in positions) / len(positions) if positions else 0
     sellable = lock_status.get('sellable_count', 0)
+    partially = lock_status.get('partially_sellable_count', 0)
     locked = lock_status.get('locked_count', 0)
 
-    print(f"\n  Positions: {len(positions)} ({sellable} sellable, {locked} locked)")
+    status_parts = []
+    if sellable > 0:
+        status_parts.append(f"{sellable} sellable")
+    if partially > 0:
+        status_parts.append(f"{partially} partial")
+    if locked > 0:
+        status_parts.append(f"{locked} locked")
+
+    print(f"\n  Stocks: {len(positions)} ({', '.join(status_parts)})")
     print(f"  Avg P&L: {color_value(total_pnl)}")
     print(f"  Cash: ${portfolio.get('cash_available', 0):,.2f}")
 
@@ -595,7 +644,8 @@ def display_quick_check(portfolio: dict, context: dict) -> None:
         pnl = pos.get('pnl_percent', 0)
         days = pos.get('days_held', 0)
         rank = pos.get('rank', 'N/A')
-        sellable = "[OK]" if pos.get('is_sellable', False) else "[LOCK]"
+        pos_lock = pos.get('lock_status', 'LOCKED')
+        sellable_tag = "[OK]" if pos_lock == 'SELLABLE' else "[PART]" if pos_lock == 'PARTIAL_LOCK' else "[LOCK]"
         trend = pos.get('trend', 'UNKNOWN')
 
         pnl_str = color_value(pnl)
@@ -609,7 +659,7 @@ def display_quick_check(portfolio: dict, context: dict) -> None:
         }
         trend_icon = trend_icons.get(trend, ' ')
 
-        print(f"  {sellable} {ticker}: {pnl_str} (Day {days}, Rank #{rank}) [{trend_icon}]")
+        print(f"  {sellable_tag} {ticker}: {pnl_str} (Day {days}, Rank #{rank}) [{trend_icon}]")
 
         # Show critical signals only
         for signal in pos.get('exit_signals', []):
@@ -682,23 +732,26 @@ def display_material_events(context: dict, recommendation: dict) -> None:
                 Colors.DIM
             ))
 
-        # Position context
+        # Position context (consolidated)
         pos = position_lookup.get(ticker, {})
         if pos:
             pnl = pos.get('pnl_percent', 0)
             days = pos.get('days_held', 0)
-            entry = pos.get('purchase_price', 0)
+            avg_cost = pos.get('average_cost', 0)
             current = pos.get('current_price', 0)
-            qty = pos.get('quantity', 0)
-            sellable = pos.get('is_sellable', False)
+            total_qty = pos.get('total_quantity', 0)
+            pos_lock = pos.get('lock_status', 'LOCKED')
+            sellable_qty = pos.get('sellable_quantity', 0)
 
             pnl_color = Colors.GREEN if pnl >= 0 else Colors.RED
-            status = colorize("SELLABLE", Colors.GREEN) if sellable else colorize("LOCKED", Colors.RED)
+            status = color_status(pos_lock)
 
             print()
             print(colorize("  YOUR POSITION:", Colors.BOLD))
-            print(f"    {qty} shares @ ${entry:.2f} entry -> ${current:.2f} now")
+            print(f"    {total_qty} shares total @ ${avg_cost:.2f} avg cost -> ${current:.2f} now")
             print(f"    P&L: {colorize(f'{pnl:+.1f}%', pnl_color)}  |  Days held: {days}  |  {status}")
+            if pos_lock == 'PARTIAL_LOCK':
+                print(f"    Sellable: {sellable_qty} of {total_qty} shares (FIFO)")
 
         # Show AI recommendation for this ticker
         actions = recommendation.get('actions', [])

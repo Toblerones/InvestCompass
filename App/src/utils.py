@@ -92,12 +92,27 @@ def load_config() -> dict:
 
 
 def load_portfolio() -> dict:
-    """Load portfolio from portfolio.json."""
+    """
+    Load portfolio from portfolio.json.
+
+    Auto-detects legacy flat format and migrates to lot-based format.
+    Creates a backup before migration.
+    """
     portfolio_path = get_portfolio_file()
     if not portfolio_path.exists():
         raise FileNotFoundError(f"Portfolio file not found: {portfolio_path}")
 
     portfolio = load_json(portfolio_path)
+
+    # Auto-migrate legacy format if needed
+    if not is_lot_based_format(portfolio):
+        import shutil
+        backup_path = portfolio_path.with_suffix('.json.backup')
+        shutil.copy2(portfolio_path, backup_path)
+        print(f"  [!] Migrating portfolio to lot-based format (backup: {backup_path.name})")
+        portfolio = migrate_portfolio_to_lots(portfolio)
+        save_json(portfolio_path, portfolio)
+
     validate_portfolio(portfolio)
     return portfolio
 
@@ -293,7 +308,9 @@ def validate_config(config: dict) -> None:
 
 def validate_portfolio(portfolio: dict) -> None:
     """
-    Validate portfolio dictionary.
+    Validate portfolio dictionary (lot-based format).
+
+    Expects positions to be lot-based: each position has a 'ticker' and 'lots' array.
 
     Args:
         portfolio: Portfolio dictionary
@@ -316,12 +333,18 @@ def validate_portfolio(portfolio: dict) -> None:
     elif portfolio['cash_available'] < 0:
         errors.append("cash_available cannot be negative")
 
-    # Validate each position
+    # Validate each position (lot-based)
     if 'positions' in portfolio and isinstance(portfolio['positions'], list):
+        seen_tickers = set()
         for i, pos in enumerate(portfolio['positions']):
+            ticker = pos.get('ticker', 'unknown')
             pos_errors = validate_position(pos)
             for err in pos_errors:
-                errors.append(f"Position {i+1} ({pos.get('ticker', 'unknown')}): {err}")
+                errors.append(f"Position {i+1} ({ticker}): {err}")
+            # Check for duplicate tickers
+            if ticker in seen_tickers:
+                errors.append(f"Position {i+1}: Duplicate ticker '{ticker}'. Use lots array for multiple purchases.")
+            seen_tickers.add(ticker)
 
     if errors:
         raise ValueError("Portfolio validation failed:\n  - " + "\n  - ".join(errors))
@@ -329,10 +352,13 @@ def validate_portfolio(portfolio: dict) -> None:
 
 def validate_position(position: dict) -> list[str]:
     """
-    Validate a single position.
+    Validate a single position (lot-based format).
+
+    A position has a 'ticker' and a 'lots' array, where each lot contains
+    quantity, purchase_price, and purchase_date.
 
     Args:
-        position: Position dictionary
+        position: Position dictionary with ticker and lots
 
     Returns:
         List of error messages (empty if valid)
@@ -340,10 +366,10 @@ def validate_position(position: dict) -> list[str]:
     errors = []
 
     # Required fields
-    required = ['ticker', 'quantity', 'purchase_price', 'purchase_date']
-    for field in required:
-        if field not in position:
-            errors.append(f"Missing field: {field}")
+    if 'ticker' not in position:
+        errors.append("Missing field: ticker")
+    if 'lots' not in position:
+        errors.append("Missing field: lots")
 
     # Validate ticker
     if 'ticker' in position:
@@ -352,28 +378,216 @@ def validate_position(position: dict) -> list[str]:
         elif not position['ticker'].isupper():
             errors.append("ticker must be uppercase")
 
-    # Validate quantity
-    if 'quantity' in position:
-        if not isinstance(position['quantity'], (int, float)):
+    # Validate lots array
+    if 'lots' in position:
+        if not isinstance(position['lots'], list):
+            errors.append("lots must be a list")
+        elif len(position['lots']) == 0:
+            errors.append("lots cannot be empty")
+        else:
+            for j, lot in enumerate(position['lots']):
+                lot_errors = validate_lot(lot)
+                for err in lot_errors:
+                    errors.append(f"Lot {j+1}: {err}")
+
+    return errors
+
+
+def validate_lot(lot: dict) -> list[str]:
+    """
+    Validate a single lot within a position.
+
+    Args:
+        lot: Lot dictionary with quantity, purchase_price, purchase_date
+
+    Returns:
+        List of error messages (empty if valid)
+    """
+    errors = []
+
+    required = ['quantity', 'purchase_price', 'purchase_date']
+    for field in required:
+        if field not in lot:
+            errors.append(f"Missing field: {field}")
+
+    if 'quantity' in lot:
+        if not isinstance(lot['quantity'], (int, float)):
             errors.append("quantity must be a number")
-        elif position['quantity'] <= 0:
+        elif lot['quantity'] <= 0:
             errors.append("quantity must be positive")
 
-    # Validate purchase_price
-    if 'purchase_price' in position:
-        if not isinstance(position['purchase_price'], (int, float)):
+    if 'purchase_price' in lot:
+        if not isinstance(lot['purchase_price'], (int, float)):
             errors.append("purchase_price must be a number")
-        elif position['purchase_price'] <= 0:
+        elif lot['purchase_price'] <= 0:
             errors.append("purchase_price must be positive")
 
-    # Validate purchase_date
-    if 'purchase_date' in position:
+    if 'purchase_date' in lot:
         try:
-            parse_date(position['purchase_date'])
+            parse_date(lot['purchase_date'])
         except ValueError:
             errors.append("purchase_date must be YYYY-MM-DD format")
 
     return errors
+
+
+# =============================================================================
+# Position Consolidation (Lot-Based)
+# =============================================================================
+
+def consolidate_positions(raw_positions: list, min_hold_days: int = 30) -> list:
+    """
+    Convert lot-based positions into consolidated position views.
+
+    Each position in raw_positions has 'ticker' and 'lots' array.
+    Returns enriched positions with computed aggregates and per-lot details.
+
+    Args:
+        raw_positions: List of position dicts from portfolio.json (lot-based)
+        min_hold_days: Minimum hold days for FIFO rule
+
+    Returns:
+        List of consolidated position dicts with computed fields
+    """
+    consolidated = []
+
+    for pos in raw_positions:
+        ticker = pos.get('ticker', '')
+        lots = pos.get('lots', [])
+        if not lots:
+            continue
+
+        # Sort lots by purchase_date (FIFO order)
+        sorted_lots = sorted(lots, key=lambda l: l.get('purchase_date', ''))
+
+        # Compute per-lot details
+        enriched_lots = []
+        total_quantity = 0
+        total_cost = 0
+        sellable_quantity = 0
+        locked_quantity = 0
+
+        for lot in sorted_lots:
+            qty = lot.get('quantity', 0)
+            price = lot.get('purchase_price', 0)
+            pdate = lot.get('purchase_date', '')
+
+            held = days_held(pdate) if pdate else 0
+            lot_sellable = is_sellable(pdate, min_hold_days) if pdate else False
+            lot_unlock = unlock_date(pdate, min_hold_days) if pdate else None
+            days_remaining = days_until_sellable(pdate, min_hold_days) if pdate else min_hold_days
+
+            enriched_lot = {
+                'quantity': qty,
+                'purchase_price': price,
+                'purchase_date': pdate,
+                'days_held': held,
+                'is_sellable': lot_sellable,
+                'unlock_date': lot_unlock.isoformat() if lot_unlock else '',
+                'days_until_sellable': days_remaining,
+            }
+            # Preserve optional fields like notes
+            if lot.get('notes'):
+                enriched_lot['notes'] = lot['notes']
+
+            enriched_lots.append(enriched_lot)
+
+            total_quantity += qty
+            total_cost += qty * price
+            if lot_sellable:
+                sellable_quantity += qty
+            else:
+                locked_quantity += qty
+
+        # Position-level aggregates
+        average_cost = total_cost / total_quantity if total_quantity > 0 else 0
+
+        # Determine lock status
+        if sellable_quantity >= total_quantity:
+            lock_status = 'SELLABLE'
+        elif sellable_quantity > 0:
+            lock_status = 'PARTIAL_LOCK'
+        else:
+            lock_status = 'LOCKED'
+
+        # Find next unlock date among locked lots
+        next_unlock = None
+        for lot in enriched_lots:
+            if not lot['is_sellable'] and lot['unlock_date']:
+                if next_unlock is None or lot['unlock_date'] < next_unlock:
+                    next_unlock = lot['unlock_date']
+
+        consolidated.append({
+            'ticker': ticker,
+            'total_quantity': total_quantity,
+            'average_cost': round(average_cost, 2),
+            'lots': enriched_lots,
+            'sellable_quantity': sellable_quantity,
+            'locked_quantity': locked_quantity,
+            'lock_status': lock_status,
+            'next_unlock_date': next_unlock,
+        })
+
+    return consolidated
+
+
+def is_lot_based_format(portfolio: dict) -> bool:
+    """
+    Check if portfolio is in lot-based format.
+
+    Returns True if positions use the lot-based structure (ticker + lots array),
+    False if they use the legacy flat format (ticker + quantity + purchase_price).
+    """
+    positions = portfolio.get('positions', [])
+    if not positions:
+        return True  # Empty portfolio is valid in either format
+    return 'lots' in positions[0]
+
+
+def migrate_portfolio_to_lots(portfolio: dict) -> dict:
+    """
+    Migrate legacy flat-format portfolio to lot-based format.
+
+    Groups positions by ticker and nests them as lots.
+
+    Args:
+        portfolio: Legacy portfolio dict with flat positions
+
+    Returns:
+        New portfolio dict in lot-based format
+    """
+    old_positions = portfolio.get('positions', [])
+
+    # Group by ticker
+    ticker_groups = {}
+    for pos in old_positions:
+        ticker = pos.get('ticker', '')
+        if ticker not in ticker_groups:
+            ticker_groups[ticker] = []
+        lot = {
+            'quantity': pos.get('quantity', 0),
+            'purchase_price': pos.get('purchase_price', 0),
+            'purchase_date': pos.get('purchase_date', ''),
+        }
+        if pos.get('notes'):
+            lot['notes'] = pos['notes']
+        ticker_groups[ticker].append(lot)
+
+    # Build new positions
+    new_positions = []
+    for ticker, lots in ticker_groups.items():
+        # Sort lots by purchase_date (FIFO)
+        lots.sort(key=lambda l: l.get('purchase_date', ''))
+        new_positions.append({
+            'ticker': ticker,
+            'lots': lots,
+        })
+
+    return {
+        'positions': new_positions,
+        'cash_available': portfolio.get('cash_available', 0),
+        'last_updated': portfolio.get('last_updated', date.today().isoformat()),
+    }
 
 
 # =============================================================================
