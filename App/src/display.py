@@ -509,6 +509,11 @@ def display_recommendations(recommendation: dict) -> None:
     if recommendation.get('error'):
         print()
         print(colorize(f"  ERROR: {recommendation['error']}", Colors.RED))
+        # Show raw response for debugging JSON parse failures
+        raw = recommendation.get('raw_response', '')
+        if raw:
+            print(colorize("\n  Raw response (first 500 chars):", Colors.DIM))
+            print(colorize(f"  {raw[:500]}", Colors.DIM))
         print()
         return
 

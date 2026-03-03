@@ -19,11 +19,35 @@ import os
 import json
 import re
 import time
+import logging
+from datetime import datetime
+from pathlib import Path
 from typing import Optional
 from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()
+
+
+# =============================================================================
+# Logging Configuration
+# =============================================================================
+
+# Setup logging to file for debugging AI responses
+LOG_DIR = Path(__file__).parent.parent / "logs"
+LOG_DIR.mkdir(exist_ok=True)
+
+logger = logging.getLogger("ai_agent")
+logger.setLevel(logging.DEBUG)
+
+# File handler - logs full responses for debugging
+log_file = LOG_DIR / "ai_agent.log"
+file_handler = logging.FileHandler(log_file, encoding="utf-8")
+file_handler.setLevel(logging.DEBUG)
+file_handler.setFormatter(logging.Formatter(
+    "%(asctime)s - %(levelname)s - %(message)s"
+))
+logger.addHandler(file_handler)
 
 
 # =============================================================================
@@ -627,7 +651,7 @@ def get_recommendation(context: dict, strategy: str, narratives: dict = None,
         try:
             message = client.messages.create(
                 model="claude-opus-4-5-20251101",
-                max_tokens=2000,
+                max_tokens=4000,
                 temperature=0.3,  # Lower temp for more consistent reasoning
                 messages=[
                     {"role": "user", "content": prompt}
@@ -727,6 +751,12 @@ def parse_recommendation(response: str) -> dict:
     Returns:
         Parsed recommendation dictionary
     """
+    # Log full response for debugging
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    logger.info(f"=== AI Response at {timestamp} ===")
+    logger.info(f"Response length: {len(response)} chars")
+    logger.debug(f"Full response:\n{response}")
+
     # Default structure
     default = {
         'actions': [],
@@ -740,28 +770,34 @@ def parse_recommendation(response: str) -> dict:
     try:
         # Try to parse as JSON directly
         result = json.loads(response)
+        logger.info("Successfully parsed JSON directly")
         return result
 
-    except json.JSONDecodeError:
+    except json.JSONDecodeError as e:
+        logger.warning(f"Direct JSON parse failed: {e}")
+
         # Try to extract JSON from markdown code blocks
         json_match = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', response)
         if json_match:
             try:
                 result = json.loads(json_match.group(1))
+                logger.info("Successfully parsed JSON from markdown code block")
                 return result
-            except json.JSONDecodeError:
-                pass
+            except json.JSONDecodeError as e2:
+                logger.warning(f"Markdown block JSON parse failed: {e2}")
 
         # Try to find JSON object in response
         json_match = re.search(r'\{[\s\S]*\}', response)
         if json_match:
             try:
                 result = json.loads(json_match.group())
+                logger.info("Successfully parsed JSON from regex extraction")
                 return result
-            except json.JSONDecodeError:
-                pass
+            except json.JSONDecodeError as e3:
+                logger.warning(f"Regex JSON parse failed: {e3}")
 
         # Return default with error
+        logger.error(f"All JSON parse attempts failed. Response logged above.")
         default['error'] = 'Could not parse JSON response'
         default['overall_strategy'] = 'Unable to parse AI response. Please review manually.'
         return default
