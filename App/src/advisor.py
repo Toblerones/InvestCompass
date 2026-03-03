@@ -30,6 +30,12 @@ from .narrative_manager import (
     load_narratives, save_narratives, update_narratives,
     prune_old_narratives, get_narrative_summary
 )
+from .recommendations_manager import (
+    record_recommendation, match_trade_to_recommendations,
+    list_recommendations, get_recommendation_by_id,
+    simulate_recommendation, fetch_current_prices_for_simulation,
+    get_tickers_from_recommendation, get_ledger_summary
+)
 
 
 # =============================================================================
@@ -103,6 +109,13 @@ def cmd_run(args):
 
     # Display full dashboard
     display_full_dashboard(portfolio, context, recommendation)
+
+    # Record recommendation to ledger (CR007)
+    try:
+        rec_id = record_recommendation(portfolio, context, recommendation, market_data)
+        print(colorize(f"  Recommendation recorded: {rec_id}", Colors.DIM))
+    except Exception as e:
+        print(colorize(f"  Warning: Failed to record recommendation: {e}", Colors.YELLOW))
 
     return 0
 
@@ -271,7 +284,17 @@ def process_trade_input(user_input: str, portfolio: dict) -> str:
             proceeds = qty * price
             portfolio['cash_available'] = portfolio.get('cash_available', 0) + proceeds
 
-            return f"Recorded: SOLD {ticker} {qty} shares @ ${price:.2f} (proceeds: ${proceeds:,.2f}, {lots_removed} lot(s) consumed)"
+            message = f"Recorded: SOLD {ticker} {qty} shares @ ${price:.2f} (proceeds: ${proceeds:,.2f}, {lots_removed} lot(s) consumed)"
+
+            # Try to match trade to pending recommendation (CR007)
+            try:
+                matched_id = match_trade_to_recommendations('sold', ticker, qty, price, date.today().isoformat())
+                if matched_id:
+                    message += f"\n    [Matched to recommendation {matched_id}]"
+            except Exception:
+                pass  # Silent failure - matching is optional
+
+            return message
         except (ValueError, IndexError):
             return ""
 
@@ -326,7 +349,17 @@ def process_trade_input(user_input: str, portfolio: dict) -> str:
             from .utils import unlock_date
             unlock = unlock_date(purchase_date)
 
-            return f"Recorded: BOUGHT {ticker} {qty} shares @ ${price:.2f} (locked until {unlock})"
+            message = f"Recorded: BOUGHT {ticker} {qty} shares @ ${price:.2f} (locked until {unlock})"
+
+            # Try to match trade to pending recommendation (CR007)
+            try:
+                matched_id = match_trade_to_recommendations('bought', ticker, qty, price, purchase_date)
+                if matched_id:
+                    message += f"\n    [Matched to recommendation {matched_id}]"
+            except Exception:
+                pass  # Silent failure - matching is optional
+
+            return message
         except (ValueError, IndexError):
             return ""
 
@@ -496,6 +529,288 @@ For more information, see README.md
 
 
 # =============================================================================
+# Simulation Commands (CR007)
+# =============================================================================
+
+def cmd_sim(args):
+    """
+    Simulation command - analyze past recommendation performance.
+
+    Usage:
+        python -m src.advisor sim              # Simulate most recent
+        python -m src.advisor sim <ID>         # Simulate specific recommendation
+        python -m src.advisor sim --list       # List all recommendations
+        python -m src.advisor sim --summary    # Show outcome statistics
+    """
+    # Handle --list flag
+    if hasattr(args, 'sim_list') and args.sim_list:
+        return _display_recommendation_list()
+
+    # Handle --summary flag
+    if hasattr(args, 'sim_summary') and args.sim_summary:
+        return _display_ledger_summary()
+
+    # Get specific ID or most recent
+    rec_id = getattr(args, 'sim_id', None)
+
+    recs = list_recommendations(limit=1)
+    if not recs and not rec_id:
+        print(colorize("\nNo recommendations recorded yet.", Colors.YELLOW))
+        print("Run a full analysis first: python -m src.advisor")
+        return 0
+
+    if rec_id:
+        rec = get_recommendation_by_id(rec_id)
+        if not rec:
+            print(colorize(f"\nRecommendation {rec_id} not found.", Colors.RED))
+            print("\nUse 'python -m src.advisor sim --list' to see available IDs.")
+            return 1
+    else:
+        # Get most recent
+        rec = recs[0]
+        rec_id = rec['id']
+
+    # Fetch current prices
+    tickers = get_tickers_from_recommendation(rec)
+    print(colorize(f"\nFetching current prices for: {', '.join(tickers)}...", Colors.DIM))
+    current_prices = fetch_current_prices_for_simulation(tickers)
+
+    if not current_prices:
+        print(colorize("Warning: Could not fetch current prices.", Colors.YELLOW))
+        return 1
+
+    # Run simulation
+    print(colorize("Running simulation...", Colors.DIM))
+    simulation = simulate_recommendation(rec_id, current_prices)
+
+    # Display results
+    _display_simulation_results(rec, simulation)
+
+    return 0
+
+
+def _display_recommendation_list():
+    """Display list of all recorded recommendations."""
+    print_header("RECOMMENDATION HISTORY")
+
+    recs = list_recommendations(limit=50)
+
+    if not recs:
+        print("\n  No recommendations recorded yet.")
+        print("  Run a full analysis first: python -m src.advisor")
+        return 0
+
+    print()
+    header = f"{'ID':<26}{'Date':<12}{'Actions':<28}{'Outcome':<12}{'Verdict':<10}"
+    print(colorize(header, Colors.BOLD))
+    print("-" * 88)
+
+    for rec in recs:
+        rec_id = rec.get('id', 'unknown')
+        rec_date = rec.get('timestamp', '')[:10]
+        actions = _summarize_actions(rec.get('recommendation', {}).get('actions', []))
+        outcome = rec.get('outcome', 'pending')
+        verdict = rec.get('simulation', {}).get('verdict', '-') if rec.get('simulation') else '-'
+
+        # Color by outcome
+        if outcome == 'accepted':
+            outcome_str = colorize(outcome, Colors.GREEN)
+        elif outcome == 'partial':
+            outcome_str = colorize(outcome, Colors.YELLOW)
+        elif outcome == 'skipped':
+            outcome_str = colorize(outcome, Colors.RED)
+        else:
+            outcome_str = colorize(outcome, Colors.DIM)
+
+        # Color by verdict
+        if verdict == 'GOOD':
+            verdict_str = colorize(verdict, Colors.GREEN)
+        elif verdict == 'BAD':
+            verdict_str = colorize(verdict, Colors.RED)
+        else:
+            verdict_str = verdict
+
+        print(f"{rec_id:<26}{rec_date:<12}{actions:<28}{outcome_str:<20}{verdict_str:<10}")
+
+    print()
+    summary = get_ledger_summary()
+    print(f"Total: {summary['total_recommendations']} | "
+          f"Accepted: {summary['total_accepted']} | "
+          f"Partial: {summary['total_partial']} | "
+          f"Skipped: {summary['total_skipped']} | "
+          f"Pending: {summary['total_pending']}")
+
+    return 0
+
+
+def _summarize_actions(actions):
+    """Create brief summary of actions for list display."""
+    if not actions:
+        return "HOLD ALL"
+
+    parts = []
+    for action in actions[:2]:  # Max 2 actions in summary
+        action_type = action.get('type', '?')
+        ticker = action.get('ticker', '?')
+        parts.append(f"{action_type} {ticker}")
+
+    summary = ", ".join(parts)
+    if len(actions) > 2:
+        summary += f" +{len(actions) - 2}"
+
+    return summary[:26]  # Truncate if needed
+
+
+def _display_ledger_summary():
+    """Display aggregate statistics from the ledger."""
+    print_header("RECOMMENDATION LEDGER SUMMARY")
+
+    summary = get_ledger_summary()
+
+    print()
+    print(f"  Total Recommendations:  {summary['total_recommendations']}")
+    print()
+    print(colorize("  Outcomes:", Colors.BOLD))
+    print(f"    Accepted (followed):  {colorize(str(summary['total_accepted']), Colors.GREEN)}")
+    print(f"    Partial (some):       {colorize(str(summary['total_partial']), Colors.YELLOW)}")
+    print(f"    Skipped (ignored):    {colorize(str(summary['total_skipped']), Colors.RED)}")
+    print(f"    Pending (awaiting):   {colorize(str(summary['total_pending']), Colors.DIM)}")
+
+    print()
+    print(colorize("  Verdicts (simulated):", Colors.BOLD))
+    verdicts = summary.get('verdicts', {})
+    print(f"    GOOD (advice helped): {colorize(str(verdicts.get('GOOD', 0)), Colors.GREEN)}")
+    print(f"    BAD (should ignore):  {colorize(str(verdicts.get('BAD', 0)), Colors.RED)}")
+    print(f"    NEUTRAL (no diff):    {verdicts.get('NEUTRAL', 0)}")
+
+    date_range = summary.get('date_range', {})
+    if date_range.get('oldest'):
+        print()
+        print(f"  Date Range: {date_range['oldest']} to {date_range['newest']}")
+
+    return 0
+
+
+def _display_simulation_results(rec: dict, simulation: dict):
+    """Display detailed simulation results for a recommendation."""
+    print_header(f"SIMULATION: {rec.get('id', 'unknown')}")
+
+    # Check for errors
+    if simulation.get('error'):
+        print(colorize(f"\n  Error: {simulation['error']}", Colors.RED))
+        return
+
+    # Recommendation summary
+    print()
+    print(colorize("Original Recommendation", Colors.BOLD))
+    print(f"  Date: {rec.get('timestamp', '')[:19]}")
+    print(f"  Confidence: {rec.get('recommendation', {}).get('confidence', 'N/A')}")
+    print()
+
+    actions = rec.get('recommendation', {}).get('actions', [])
+    for i, action in enumerate(actions):
+        action_type = action.get('type', '?')
+        ticker = action.get('ticker', '?')
+        amount = action.get('amount', '')
+
+        # Get price at time of recommendation
+        market_snapshot = rec.get('market_snapshot', {})
+        rankings = market_snapshot.get('rankings', {})
+        expected_price = rankings.get(ticker, {}).get('price', 0)
+
+        if action_type == 'BUY':
+            type_color = Colors.GREEN
+        elif action_type == 'SELL':
+            type_color = Colors.RED
+        else:
+            type_color = Colors.YELLOW
+
+        print(f"  {i+1}. {colorize(action_type, type_color + Colors.BOLD)} {ticker} {amount}", end='')
+        if expected_price:
+            print(f" @ ${expected_price:.2f}")
+        else:
+            print()
+
+    # Price movement
+    print()
+    print(colorize("Price Movement", Colors.BOLD))
+    prices_then = simulation.get('prices_then', {})
+    prices_now = simulation.get('prices_now', {})
+
+    for ticker in sorted(prices_then.keys()):
+        then = prices_then.get(ticker, 0)
+        now = prices_now.get(ticker, then)
+        if then > 0:
+            change = ((now - then) / then) * 100
+            change_str = f"{change:+.1f}%"
+            if change > 0:
+                change_color = Colors.GREEN
+            elif change < 0:
+                change_color = Colors.RED
+            else:
+                change_color = Colors.DIM
+            print(f"  {ticker}: ${then:.2f} -> ${now:.2f} ({colorize(change_str, change_color)})")
+
+    # Hypothetical P&L
+    print()
+    print(colorize("Hypothetical P&L Analysis", Colors.BOLD))
+    hypo = simulation.get('hypothetical_pnl', {})
+
+    if_followed = hypo.get('if_followed', 0)
+    if_ignored = hypo.get('if_ignored', 0)
+
+    followed_color = Colors.GREEN if if_followed > 0 else Colors.RED if if_followed < 0 else Colors.DIM
+    ignored_color = Colors.GREEN if if_ignored > 0 else Colors.RED if if_ignored < 0 else Colors.DIM
+
+    print(f"  If you followed advice:  {colorize(f'${if_followed:+,.2f}', followed_color)}")
+    print(f"  If you ignored advice:   {colorize(f'${if_ignored:+,.2f}', ignored_color)}")
+
+    # Verdict
+    print()
+    print(colorize("Verdict", Colors.BOLD))
+    verdict = simulation.get('verdict', 'NEUTRAL')
+    days = simulation.get('days_elapsed', 0)
+    diff = if_followed - if_ignored
+
+    if verdict == 'GOOD':
+        print(colorize(f"  {verdict}: The advice would have helped! (+${diff:.2f} vs ignoring)", Colors.GREEN + Colors.BOLD))
+    elif verdict == 'BAD':
+        print(colorize(f"  {verdict}: Better to have ignored this one. (${diff:.2f} vs ignoring)", Colors.RED + Colors.BOLD))
+    else:
+        print(colorize(f"  {verdict}: Advice made little difference either way.", Colors.YELLOW))
+
+    print(f"\n  Analysis period: {days} days since recommendation")
+    print()
+
+
+def cmd_review(args):
+    """
+    Review command - AI-assisted pattern analysis (Phase 3 - Future).
+
+    Requires: Minimum 20 completed recommendations with verdicts.
+    """
+    summary = get_ledger_summary()
+    total_completed = summary['total_accepted'] + summary['total_partial'] + summary['total_skipped']
+
+    if total_completed < 20:
+        print(colorize("\nNot enough data for pattern analysis.", Colors.YELLOW))
+        print(f"  Completed recommendations: {total_completed}")
+        print(f"  Required minimum: 20")
+        print("\nContinue using the advisor and running simulations to build history.")
+        return 0
+
+    print(colorize("\n[Phase 3] Learning loop not yet implemented.", Colors.DIM))
+    print("\nFuture capabilities:")
+    print("  - Pattern detection in GOOD vs BAD verdicts")
+    print("  - Strategy refinement suggestions")
+    print("  - Scorecard by decision type")
+    print("\nThis feature will be available once the recommendation ledger has")
+    print("accumulated enough data to identify meaningful patterns.")
+
+    return 0
+
+
+# =============================================================================
 # Main Entry Point
 # =============================================================================
 
@@ -509,12 +824,16 @@ Commands:
   (none)    Run full analysis and get AI recommendations
   check     Quick portfolio status check
   confirm   Record executed trades
+  sim       Simulate past recommendations (--list, --summary, or <ID>)
+  review    AI-assisted strategy review (requires 20+ recommendations)
   init      Initialize portfolio (first-time setup)
 
 Examples:
-  python -m src.advisor           # Full analysis
-  python -m src.advisor check     # Quick status
-  python -m src.advisor confirm   # Record trades
+  python -m src.advisor              # Full analysis
+  python -m src.advisor check        # Quick status
+  python -m src.advisor confirm      # Record trades
+  python -m src.advisor sim --list   # List past recommendations
+  python -m src.advisor sim          # Simulate most recent
         """
     )
 
@@ -522,8 +841,28 @@ Examples:
         'command',
         nargs='?',
         default='run',
-        choices=['run', 'check', 'confirm', 'migrate', 'init', 'help'],
+        choices=['run', 'check', 'confirm', 'migrate', 'init', 'sim', 'review', 'help'],
         help='Command to execute (default: run)'
+    )
+
+    # Simulation command arguments
+    parser.add_argument(
+        'sim_id',
+        nargs='?',
+        default=None,
+        help='Recommendation ID to simulate (for sim command)'
+    )
+    parser.add_argument(
+        '--list',
+        dest='sim_list',
+        action='store_true',
+        help='List all recorded recommendations'
+    )
+    parser.add_argument(
+        '--summary',
+        dest='sim_summary',
+        action='store_true',
+        help='Show ledger summary statistics'
     )
 
     args = parser.parse_args()
@@ -535,6 +874,8 @@ Examples:
         'confirm': cmd_confirm,
         'migrate': cmd_migrate,
         'init': cmd_init,
+        'sim': cmd_sim,
+        'review': cmd_review,
         'help': cmd_help,
     }
 
