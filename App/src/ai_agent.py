@@ -196,7 +196,7 @@ ONGOING NARRATIVES (from previous analysis):
 CONSTRAINTS:
 - Maximum positions: {config.get('max_positions', 3)}
 - Transaction fee: ${transaction_fee} per trade
-- Monthly budget: ${config.get('monthly_budget', 400)}
+- Monthly deposit budget: ${config.get('monthly_budget', 400)} (external capital the user MAY deposit from outside — it is NOT currently in the portfolio and must NOT be added to or subtracted from available cash. Only reference this in risk_warnings if: (1) confidence=HIGH AND (2) existing cash is insufficient for the recommended BUY. In that case include a note such as: "Consider depositing your $X monthly budget to fund this position if you wish to proceed." Do not recommend a BUY using undeposited budget funds.)
 - Stop loss threshold: {config.get('stop_loss_percent', -10)}%
 - Profit target: +{config.get('profit_target_percent', 20)}%
 - Minimum swap benefit: $50 after fees

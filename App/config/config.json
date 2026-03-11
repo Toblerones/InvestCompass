@@ -6,10 +6,12 @@
     "NVDA",
     "EOSE",
     "VST",
-    "BE",
     "LITE",
     "NBIS",
-    "CRWV"
+    "CRWV",
+
+    "IAU",
+    "TAIL"
   ],
   "monthly_budget": 300,
   "transaction_fee": 1,
@@ -20,15 +22,16 @@
   "min_swap_benefit": 50,
   
   "bk_watchlist": [
-    "AAPL",
     "MSFT",
     "GOOGL",
     "AMZN",
     "NVDA",
-    "TSLA",
-    "META",
-    "AMD",
-    "INTC"
+    "EOSE",
+    "VST",
+    "BE",
+    "LITE",
+    "NBIS",
+    "CRWV"
   ]
 }
 

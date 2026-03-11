@@ -1,10 +1,10 @@
 {
   "version": "1.0",
-  "last_updated": "2026-03-03T20:31:23.723253",
+  "last_updated": "2026-03-11T13:47:08.103853",
   "statistics": {
-    "total_recommendations": 1,
+    "total_recommendations": 8,
     "total_accepted": 0,
-    "total_partial": 0,
+    "total_partial": 1,
     "total_skipped": 0,
     "last_pruned": null
   },
@@ -12,8 +12,8 @@
     {
       "id": "rec_20260303_203123",
       "timestamp": "2026-03-03T20:31:23.723108",
-      "outcome": "pending",
-      "outcome_timestamp": null,
+      "outcome": "partial",
+      "outcome_timestamp": "2026-03-11T11:42:42.431697",
       "portfolio_snapshot": {
         "positions": [
           {
@@ -142,6 +142,935 @@
           "NVDA post-earnings volatility may continue short-term despite strong fundamentals",
           "Portfolio now at 3 positions - no room for additional entries without exits",
           "All three positions currently underperforming or matching SPY - market headwinds present"
+        ]
+      },
+      "execution": {
+        "matched_at": "2026-03-04T17:23:59.044328",
+        "trades_matched": [
+          {
+            "action_index": 0,
+            "executed": true,
+            "actual_price": 591.85,
+            "actual_quantity": 1.5,
+            "variance_percent": 48.5,
+            "matched_at": "2026-03-04T17:23:59.044326"
+          }
+        ],
+        "partial_reason": "Timeout: only some actions executed"
+      },
+      "simulation": null
+    },
+    {
+      "id": "rec_20260304_172607",
+      "timestamp": "2026-03-04T17:26:07.459512",
+      "outcome": "pending",
+      "outcome_timestamp": null,
+      "portfolio_snapshot": {
+        "positions": [
+          {
+            "ticker": "MSFT",
+            "total_quantity": 1,
+            "average_cost": 434.0,
+            "current_price": 403.93,
+            "pnl_percent": -6.928571428571427,
+            "lock_status": "SELLABLE",
+            "sellable_quantity": 1
+          },
+          {
+            "ticker": "NVDA",
+            "total_quantity": 1,
+            "average_cost": 191.83,
+            "current_price": 180.05,
+            "pnl_percent": -6.1408538810405044,
+            "lock_status": "SELLABLE",
+            "sellable_quantity": 1
+          }
+        ],
+        "cash_available": 887.7750000000001,
+        "total_value": 1471.76
+      },
+      "market_snapshot": {
+        "top_3": [
+          "NVDA",
+          "LITE",
+          "MSFT"
+        ],
+        "rankings": {
+          "NVDA": {
+            "rank": 1,
+            "score": 7.3,
+            "price": 180.05
+          },
+          "LITE": {
+            "rank": 2,
+            "score": 6.0,
+            "price": 694.43
+          },
+          "MSFT": {
+            "rank": 3,
+            "score": 5.8,
+            "price": 403.93
+          },
+          "EOSE": {
+            "rank": 4,
+            "score": 5.2,
+            "price": 6.06
+          },
+          "CRWV": {
+            "rank": 5,
+            "score": 5.2,
+            "price": 73.78
+          },
+          "GOOGL": {
+            "rank": 6,
+            "score": 4.8,
+            "price": 303.58
+          },
+          "NBIS": {
+            "rank": 7,
+            "score": 4.4,
+            "price": 86.8
+          },
+          "AMZN": {
+            "rank": 8,
+            "score": 4.2,
+            "price": 208.73
+          },
+          "VST": {
+            "rank": 9,
+            "score": 3.6,
+            "price": 161.7
+          }
+        },
+        "benchmark_spy_30d": -1.68
+      },
+      "recommendation": {
+        "actions": [
+          {
+            "type": "HOLD",
+            "ticker": "NVDA",
+            "amount": "1 shares",
+            "reasoning": "EVENT ASSESSMENT: The 'Nvidia turned a steal of a deal into its secret weapon' headline refers to NVDA as the ACQUIRER, not a target. This appears to be retrospective coverage of a past strategic acquisition that has proven valuable - not a new M&A event requiring immediate action. THESIS VALIDATION: This news is actually positive - it validates NVDA's strategic M&A capabilities and competitive moat. The existing intel_acquisition_rumor narrative remains speculative. HOLD vs EXIT ANALYSIS: Curre",
+            "valid": true,
+            "quantity": 1.0
+          },
+          {
+            "type": "HOLD",
+            "ticker": "MSFT",
+            "amount": "1 shares",
+            "reasoning": "EVENT ASSESSMENT: The Amazon/OpenAI deal prompted a joint MSFT/OpenAI statement reaffirming their partnership. This is NOT an M&A event involving MSFT directly - it's competitive dynamics in the AI partnership space. MSFT is neither acquiring nor being acquired here. THESIS VALIDATION: The amazon_openai_competition narrative already captured this development. The joint statement actually VALIDATES the thesis - MSFT/OpenAI relationship remains intact despite competitive pressure. This is partners",
+            "valid": true,
+            "quantity": 1.0
+          },
+          {
+            "type": "HOLD",
+            "ticker": "CASH",
+            "amount": "$887.78",
+            "reasoning": "ENTRY OPPORTUNITY ANALYSIS: LITE is ranked #2 but RSI at 64.6 is elevated (prefer RSI < 50 for entry per strategy). Entry signal is NEUTRAL, not compelling. At $694.43/share, we could only buy 1 share with current cash ($887.78), leaving minimal diversification benefit. COST EFFICIENCY: Adding a 3rd position would increase transaction costs and portfolio complexity without clear fundamental advantage over current holdings. NVDA (#1) and MSFT (#3) already cover top-3 quality requirement. STRATEGI",
+            "valid": true
+          }
+        ],
+        "overall_strategy": "Maintain current 2-position portfolio (NVDA #1, MSFT #3) with cash reserve. Both material events analyzed were NOT thesis-breaking: NVDA acquisition news validates strategic capabilities (bullish), MSFT/OpenAI statement reaffirms partnership amid competition (neutral). Neither position has breached stop-loss thresholds. LITE entry opportunity rejected due to elevated RSI (64.6) and extreme valuation (P/E 200). Preserving $887.78 cash for potential stop-loss execution on MSFT if it drops another ",
+        "confidence": "HIGH",
+        "risk_warnings": [
+          "MSFT at -6.9% P&L is approaching -10% stop-loss threshold - monitor closely for potential forced exit",
+          "Both holdings underperforming SPY by ~4% over 30 days - sector rotation risk if tech weakness continues",
+          "NVDA succession planning concern (no clear CEO successor) remains unresolved long-term governance risk",
+          "High correlation between NVDA and MSFT as large-cap tech - limited diversification benefit"
+        ]
+      },
+      "execution": {
+        "matched_at": null,
+        "trades_matched": []
+      },
+      "simulation": null
+    },
+    {
+      "id": "rec_20260305_100344",
+      "timestamp": "2026-03-05T10:03:44.089913",
+      "outcome": "pending",
+      "outcome_timestamp": null,
+      "portfolio_snapshot": {
+        "positions": [
+          {
+            "ticker": "MSFT",
+            "total_quantity": 1,
+            "average_cost": 434.0,
+            "current_price": 405.2,
+            "pnl_percent": -6.635944700460832,
+            "lock_status": "SELLABLE",
+            "sellable_quantity": 1
+          },
+          {
+            "ticker": "NVDA",
+            "total_quantity": 1,
+            "average_cost": 191.83,
+            "current_price": 183.04,
+            "pnl_percent": -4.5821821404368555,
+            "lock_status": "SELLABLE",
+            "sellable_quantity": 1
+          }
+        ],
+        "cash_available": 887.7750000000001,
+        "total_value": 1476.02
+      },
+      "market_snapshot": {
+        "top_3": [
+          "NVDA",
+          "LITE",
+          "MSFT"
+        ],
+        "rankings": {
+          "NVDA": {
+            "rank": 1,
+            "score": 7.3,
+            "price": 183.04
+          },
+          "LITE": {
+            "rank": 2,
+            "score": 6.0,
+            "price": 680.8
+          },
+          "MSFT": {
+            "rank": 3,
+            "score": 5.8,
+            "price": 405.2
+          },
+          "EOSE": {
+            "rank": 4,
+            "score": 5.2,
+            "price": 6.75
+          },
+          "NBIS": {
+            "rank": 5,
+            "score": 5.2,
+            "price": 97.78
+          },
+          "CRWV": {
+            "rank": 6,
+            "score": 5.2,
+            "price": 79.5
+          },
+          "GOOGL": {
+            "rank": 7,
+            "score": 4.8,
+            "price": 303.13
+          },
+          "AMZN": {
+            "rank": 8,
+            "score": 4.1,
+            "price": 216.82
+          },
+          "VST": {
+            "rank": 9,
+            "score": 4.0,
+            "price": 163.36
+          }
+        },
+        "benchmark_spy_30d": -1.48
+      },
+      "recommendation": {
+        "actions": [
+          {
+            "type": "HOLD",
+            "ticker": "NVDA",
+            "amount": "1 shares",
+            "reasoning": "EVENT ASSESSMENT: The Needham price target raise on Lumentum relates to NVDA's strategic partnership deal for laser technology - NVDA is the ACQUIRER/PARTNER, not target. This is a supply chain strengthening move for AI infrastructure optics. THESIS VALIDATION: This validates the investment thesis - NVDA is proactively securing critical supply chain components for next-gen AI hardware. The Lumentum deal demonstrates continued AI infrastructure buildout and strategic foresight. HOLD vs EXIT: HOLD",
+            "valid": true,
+            "quantity": 1.0
+          },
+          {
+            "type": "HOLD",
+            "ticker": "MSFT",
+            "amount": "1 shares",
+            "reasoning": "EVENT ASSESSMENT: The Amazon-OpenAI deal prompted a JOINT STATEMENT from Microsoft and OpenAI reaffirming their partnership. MSFT is NOT being acquired - this is competitive dynamics news. The joint statement is actually a BULLISH signal showing partnership strength despite Amazon's competitive moves. THESIS VALIDATION: Thesis remains intact. The joint statement demonstrates OpenAI-MSFT relationship is stronger than market feared. Amazon competition is acknowledged but not thesis-breaking. Insid",
+            "valid": true,
+            "quantity": 1.0
+          },
+          {
+            "type": "HOLD",
+            "ticker": "CASH",
+            "amount": "$887.78",
+            "reasoning": "ENTRY OPPORTUNITY ANALYSIS: LITE is Rank #2 with Score=6.0, making it eligible for entry. However, RSI=61.6 indicates NEUTRAL entry timing (prefer RSI<50 per strategy). Price at $680.80 exceeds available cash of $887.78, so could only buy ~1.3 shares. The Lumentum-NVIDIA deal creates concentration risk - LITE is now more correlated with NVDA (both in AI optics supply chain). Per strategy, avoid 3 highly correlated stocks. Adding LITE would create NVDA-LITE correlation exposure. Additionally, LIT",
+            "valid": true
+          }
+        ],
+        "overall_strategy": "Maintain current 2-position portfolio (NVDA + MSFT) with cash reserve. Both material events analyzed are POSITIVE or NEUTRAL - NVDA partnership strengthens supply chain thesis, MSFT-OpenAI joint statement reaffirms partnership strength. Neither position has hit stop-loss (-10%) or profit target (+20%). Both remain in top-3 rankings. LITE entry declined due to elevated RSI, high correlation with existing NVDA position post-Lumentum deal, and price exceeding comfortable position sizing. Patient ca",
+        "confidence": "HIGH",
+        "risk_warnings": [
+          "MSFT at -6.6% is approaching -10% stop-loss threshold - monitor closely for breach",
+          "NVDA succession planning remains unresolved long-term governance risk",
+          "Portfolio concentrated in AI/cloud theme - market-wide AI sentiment shift would impact both positions",
+          "Japan antitrust scrutiny on MSFT Azure is ongoing regulatory headline risk"
+        ]
+      },
+      "execution": {
+        "matched_at": null,
+        "trades_matched": []
+      },
+      "simulation": null
+    },
+    {
+      "id": "rec_20260305_152644",
+      "timestamp": "2026-03-05T15:26:44.745058",
+      "outcome": "pending",
+      "outcome_timestamp": null,
+      "portfolio_snapshot": {
+        "positions": [
+          {
+            "ticker": "MSFT",
+            "total_quantity": 1,
+            "average_cost": 434.0,
+            "current_price": 405.2,
+            "pnl_percent": -6.635944700460832,
+            "lock_status": "SELLABLE",
+            "sellable_quantity": 1
+          },
+          {
+            "ticker": "NVDA",
+            "total_quantity": 1,
+            "average_cost": 191.83,
+            "current_price": 183.04,
+            "pnl_percent": -4.5821821404368555,
+            "lock_status": "SELLABLE",
+            "sellable_quantity": 1
+          }
+        ],
+        "cash_available": 887.7750000000001,
+        "total_value": 1476.02
+      },
+      "market_snapshot": {
+        "top_3": [
+          "NVDA",
+          "LITE",
+          "MSFT"
+        ],
+        "rankings": {
+          "NVDA": {
+            "rank": 1,
+            "score": 7.3,
+            "price": 183.04
+          },
+          "LITE": {
+            "rank": 2,
+            "score": 6.0,
+            "price": 680.8
+          },
+          "MSFT": {
+            "rank": 3,
+            "score": 5.8,
+            "price": 405.2
+          },
+          "EOSE": {
+            "rank": 4,
+            "score": 5.2,
+            "price": 6.75
+          },
+          "NBIS": {
+            "rank": 5,
+            "score": 5.2,
+            "price": 97.78
+          },
+          "CRWV": {
+            "rank": 6,
+            "score": 5.2,
+            "price": 79.5
+          },
+          "GOOGL": {
+            "rank": 7,
+            "score": 4.8,
+            "price": 303.13
+          },
+          "AMZN": {
+            "rank": 8,
+            "score": 4.1,
+            "price": 216.82
+          },
+          "VST": {
+            "rank": 9,
+            "score": 4.0,
+            "price": 163.36
+          },
+          "IAU": {
+            "rank": 10,
+            "score": 4.0,
+            "price": 96.65
+          },
+          "TAIL": {
+            "rank": 11,
+            "score": 3.8,
+            "price": 11.62
+          }
+        },
+        "benchmark_spy_30d": -1.48
+      },
+      "recommendation": {
+        "actions": [
+          {
+            "type": "HOLD",
+            "ticker": "NVDA",
+            "amount": "1 shares",
+            "reasoning": "EVENT ASSESSMENT: The '$100 Billion OpenAI-Nvidia Deal Is Not Happening' headline refers to a potential massive investment/acquisition deal that was speculated but never materialized. This is NOT a deal where NVDA was being acquired - rather, it was speculation about NVDA potentially investing heavily in OpenAI infrastructure. The deal not happening means NVDA retains its capital for other uses. THESIS VALIDATION: This actually validates the existing narrative. The 'openai_partnership' narrative",
+            "valid": true,
+            "quantity": 1.0
+          },
+          {
+            "type": "HOLD",
+            "ticker": "MSFT",
+            "amount": "1 shares",
+            "reasoning": "EVENT ASSESSMENT: The 'New Amazon Deal Prompts Joint Statement from Microsoft and OpenAI' refers to competitive dynamics where Amazon made a move in AI space, prompting MSFT and OpenAI to publicly reaffirm their partnership. This is NOT an M&A event involving MSFT as target or acquirer - it's a competitive response statement. THESIS VALIDATION: This actually STRENGTHENS the investment case. The joint statement explicitly reaffirms the MSFT-OpenAI partnership, addressing fears that OpenAI might d",
+            "valid": true,
+            "quantity": 1.0
+          },
+          {
+            "type": "HOLD",
+            "ticker": "CASH",
+            "amount": "$887.78",
+            "reasoning": "Cash flow calculation: Current cash = $887.78. Entry opportunity analysis: LITE is #2 ranked at $680.80 but has NEUTRAL entry signal (RSI=61.6 is elevated, not ideal). More importantly, the 'Nvidia Deal Correlation' narrative flags that Lumentum-NVIDIA partnership creates correlation risk with existing NVDA position - both would be exposed to AI optics supply chain dynamics. Adding LITE would concentrate portfolio in correlated AI chip/optics plays. Strategy principles recommend avoiding 3 highl",
+            "valid": true
+          }
+        ],
+        "overall_strategy": "Maintain current 2-position portfolio with NVDA (#1) and MSFT (#3) - both remain in top 3 rankings and within acceptable P&L ranges. The material events detected (NVDA deal speculation, MSFT-OpenAI joint statement) are both neutral-to-positive and do not warrant exits. Neither position has hit stop-loss (-10%) or profit target (+20%). Cash of $887.78 is preserved as no compelling entry exists - LITE's correlation with NVDA creates concentration risk, and its RSI of 61.6 suggests waiting for bett",
+        "confidence": "HIGH",
+        "risk_warnings": [
+          "MSFT at -6.6% P&L is approaching -10% stop-loss threshold - monitor closely for potential exit trigger",
+          "Both positions are in AI/tech sector creating correlation risk during sector-wide pullbacks",
+          "NVDA succession planning concern remains unresolved - no clear CEO successor identified",
+          "Holding significant cash ($887.78) creates opportunity cost if market rallies"
+        ]
+      },
+      "execution": {
+        "matched_at": null,
+        "trades_matched": []
+      },
+      "simulation": null
+    },
+    {
+      "id": "rec_20260306_182543",
+      "timestamp": "2026-03-06T18:25:43.759921",
+      "outcome": "pending",
+      "outcome_timestamp": null,
+      "portfolio_snapshot": {
+        "positions": [
+          {
+            "ticker": "MSFT",
+            "total_quantity": 1,
+            "average_cost": 434.0,
+            "current_price": 410.68,
+            "pnl_percent": -5.37327188940092,
+            "lock_status": "SELLABLE",
+            "sellable_quantity": 1
+          },
+          {
+            "ticker": "NVDA",
+            "total_quantity": 1,
+            "average_cost": 191.83,
+            "current_price": 183.34,
+            "pnl_percent": -4.42579367147996,
+            "lock_status": "SELLABLE",
+            "sellable_quantity": 1
+          }
+        ],
+        "cash_available": 887.7750000000001,
+        "total_value": 1481.8
+      },
+      "market_snapshot": {
+        "top_3": [
+          "NVDA",
+          "LITE",
+          "MSFT"
+        ],
+        "rankings": {
+          "NVDA": {
+            "rank": 1,
+            "score": 7.3,
+            "price": 183.34
+          },
+          "LITE": {
+            "rank": 2,
+            "score": 6.0,
+            "price": 650.82
+          },
+          "MSFT": {
+            "rank": 3,
+            "score": 5.8,
+            "price": 410.68
+          },
+          "EOSE": {
+            "rank": 4,
+            "score": 5.2,
+            "price": 6.72
+          },
+          "NBIS": {
+            "rank": 5,
+            "score": 5.2,
+            "price": 95.65
+          },
+          "CRWV": {
+            "rank": 6,
+            "score": 5.2,
+            "price": 74.82
+          },
+          "GOOGL": {
+            "rank": 7,
+            "score": 4.8,
+            "price": 300.88
+          },
+          "AMZN": {
+            "rank": 8,
+            "score": 4.1,
+            "price": 218.94
+          },
+          "VST": {
+            "rank": 9,
+            "score": 4.0,
+            "price": 167.4
+          },
+          "TAIL": {
+            "rank": 10,
+            "score": 3.8,
+            "price": 11.65
+          },
+          "IAU": {
+            "rank": 11,
+            "score": 3.6,
+            "price": 95.52
+          }
+        },
+        "benchmark_spy_30d": -1.19
+      },
+      "recommendation": {
+        "actions": [
+          {
+            "type": "HOLD",
+            "ticker": "MSFT",
+            "amount": "1 shares",
+            "reasoning": "EVENT ASSESSMENT: The 'New Amazon Deal Prompts Joint Statement from Microsoft and OpenAI' headline is NOT an M&A event involving MSFT as target or acquirer. This is a competitive response - Amazon made a deal (likely AI infrastructure), and MSFT-OpenAI issued a joint statement reaffirming their partnership. THESIS VALIDATION: This actually VALIDATES the investment case. The joint statement demonstrates partnership strength and commitment in response to competitive pressure. The existing narrativ",
+            "valid": true,
+            "quantity": 1.0
+          },
+          {
+            "type": "HOLD",
+            "ticker": "NVDA",
+            "amount": "1 shares",
+            "reasoning": "EVENT ASSESSMENT: 'Legendary trader slams billion dollar Nvidia GPU deal for AI push' - This is commentary/opinion on an NVDA GPU sale deal, NOT an M&A event where NVDA is being acquired or acquiring another company. A trader criticizing a large GPU purchase deal is market noise, not a material structural event. THESIS VALIDATION: Thesis remains FULLY INTACT. The fact that billion-dollar GPU deals are happening validates exceptional AI demand. Criticism from a trader about deal terms or valuatio",
+            "valid": true,
+            "quantity": 1.0
+          },
+          {
+            "type": "HOLD",
+            "ticker": "CASH",
+            "amount": "$887.78",
+            "reasoning": "CASH FLOW CALCULATION: Current cash = $887.78. No sells recommended. ENTRY OPPORTUNITY ANALYSIS: LITE (Rank #2, $650.82) is the only top-3 stock not in portfolio. However, I recommend NOT buying LITE for the following reasons: (1) CORRELATION RISK: Active narrative 'Nvidia Deal Correlation' notes Lumentum-NVIDIA partnership confirmed. Buying LITE would create concentrated AI optics supply chain exposure with existing NVDA position - violates 'avoid 3 highly correlated stocks' principle. (2) ENTR",
+            "valid": true
+          }
+        ],
+        "overall_strategy": "HOLD current positions, maintain cash buffer. Both material events analyzed were NOT actual M&A events requiring action - MSFT news was partnership reaffirmation (bullish), NVDA news was trader commentary on GPU deals (noise). Portfolio holds #1 and #3 ranked stocks with combined -4.9% average P&L, well within normal volatility tolerance. Neither position triggers stop-loss (-10%) or profit target (+20%). Cash of $887.78 preserved for better entry opportunity - LITE declined due to high correlat",
+        "confidence": "HIGH",
+        "risk_warnings": [
+          "NVDA export permit news (Bloomberg) represents ongoing regulatory headline risk - monitor for actual policy changes vs speculation",
+          "MSFT approaching stop-loss territory (-5.4% vs -10% trigger) - $390.60 stop price, current $410.68 provides ~$20 buffer",
+          "Both positions slightly underperforming SPY over 30 days - acceptable but worth monitoring",
+          "High cash position ($887.78) has opportunity cost if market rallies - but discipline preferred over chasing correlated positions"
+        ]
+      },
+      "execution": {
+        "matched_at": null,
+        "trades_matched": []
+      },
+      "simulation": null
+    },
+    {
+      "id": "rec_20260307_174609",
+      "timestamp": "2026-03-07T17:46:09.246289",
+      "outcome": "pending",
+      "outcome_timestamp": null,
+      "portfolio_snapshot": {
+        "positions": [
+          {
+            "ticker": "MSFT",
+            "total_quantity": 1,
+            "average_cost": 434.0,
+            "current_price": 408.96,
+            "pnl_percent": -5.769585253456226,
+            "lock_status": "SELLABLE",
+            "sellable_quantity": 1
+          },
+          {
+            "ticker": "NVDA",
+            "total_quantity": 1,
+            "average_cost": 191.83,
+            "current_price": 177.82,
+            "pnl_percent": -7.303341500286723,
+            "lock_status": "SELLABLE",
+            "sellable_quantity": 1
+          }
+        ],
+        "cash_available": 887.7750000000001,
+        "total_value": 1474.56
+      },
+      "market_snapshot": {
+        "top_3": [
+          "NVDA",
+          "LITE",
+          "MSFT"
+        ],
+        "rankings": {
+          "NVDA": {
+            "rank": 1,
+            "score": 7.3,
+            "price": 177.82
+          },
+          "LITE": {
+            "rank": 2,
+            "score": 6.0,
+            "price": 558.44
+          },
+          "MSFT": {
+            "rank": 3,
+            "score": 5.8,
+            "price": 408.96
+          },
+          "EOSE": {
+            "rank": 4,
+            "score": 5.2,
+            "price": 6.13
+          },
+          "CRWV": {
+            "rank": 5,
+            "score": 5.2,
+            "price": 72.99
+          },
+          "GOOGL": {
+            "rank": 6,
+            "score": 4.8,
+            "price": 298.52
+          },
+          "NBIS": {
+            "rank": 7,
+            "score": 4.4,
+            "price": 89.33
+          },
+          "IAU": {
+            "rank": 8,
+            "score": 4.0,
+            "price": 96.98
+          },
+          "TAIL": {
+            "rank": 9,
+            "score": 3.8,
+            "price": 11.81
+          },
+          "AMZN": {
+            "rank": 10,
+            "score": 3.7,
+            "price": 213.21
+          },
+          "VST": {
+            "rank": 11,
+            "score": 3.6,
+            "price": 158.65
+          }
+        },
+        "benchmark_spy_30d": -2.01
+      },
+      "recommendation": {
+        "actions": [
+          {
+            "type": "HOLD",
+            "ticker": "NVDA",
+            "amount": "1 shares",
+            "reasoning": "NVDA remains #1 ranked with exceptional fundamentals (Score=7.3, RevGrowth=73.2%). Current P&L of -7.3% is within normal volatility range (-5% to +15%) and well above -10% stop-loss threshold. RSI=44.8 suggests neutral-to-oversold conditions. CEO bonus news is positive - aligns management incentives with revenue growth. Stock is beating market by 4.09% over 30 days. No earnings imminent. Continue holding as core conviction position.",
+            "valid": true,
+            "quantity": 1.0
+          },
+          {
+            "type": "HOLD",
+            "ticker": "MSFT",
+            "amount": "1 shares",
+            "reasoning": "MSFT maintains #3 ranking (Score=5.8) which meets quality threshold. Current P&L of -5.8% is within acceptable drawdown range and above -10% stop-loss (~$390.60). Recent news is constructive: AI adoption positioning, Anthropic partnership maintained, insider buying signal from director. Stock tracking market performance. RSI=56.4 is neutral. No earnings imminent. Hold through normal volatility as fundamentals remain intact.",
+            "valid": true,
+            "quantity": 1.0
+          },
+          {
+            "type": "HOLD",
+            "ticker": "CASH",
+            "amount": "$887.78",
+            "reasoning": "LITE (#2 ranked) appears attractive with favorable RSI=49.6 and near support, BUT: (1) Stock is up 19.96% in 30 days - chasing momentum after 46% post-earnings run is risky, (2) P/E=188.7 is extremely elevated, (3) High correlation with existing NVDA position via AI optics supply chain creates concentration risk, (4) NVIDIA deal news creates headline dependency. Per strategy principles, holding cash when no compelling top-3 opportunity exists is acceptable. Will deploy on pullback or next month'",
+            "valid": true
+          }
+        ],
+        "overall_strategy": "Maintain current 2-position portfolio with NVDA (#1) and MSFT (#3) as both remain in top-3 rankings with intact fundamentals. Both positions are within normal volatility ranges and above stop-loss thresholds. Preserve $887.78 cash rather than chase LITE after its 46% post-earnings surge - the elevated P/E of 188.7 and high correlation with NVDA via AI optics supply chain creates unacceptable concentration risk. Discipline over FOMO: wait for better entry or deploy capital next month if condition",
+        "confidence": "HIGH",
+        "risk_warnings": [
+          "NVDA at -7.3% P&L - approaching monitoring zone but still 2.7% above stop-loss threshold",
+          "MSFT at -5.8% P&L - monitor for further weakness toward -10% stop-loss at ~$390.60",
+          "LITE correlation risk - adding would create 2/3 positions exposed to AI chip/optics supply chain",
+          "Cash drag - $887.78 uninvested may underperform if market rallies, but preserves optionality"
+        ]
+      },
+      "execution": {
+        "matched_at": null,
+        "trades_matched": []
+      },
+      "simulation": null
+    },
+    {
+      "id": "rec_20260311_114242",
+      "timestamp": "2026-03-11T11:42:42.433013",
+      "outcome": "pending",
+      "outcome_timestamp": null,
+      "portfolio_snapshot": {
+        "positions": [
+          {
+            "ticker": "MSFT",
+            "total_quantity": 1,
+            "average_cost": 434.0,
+            "current_price": 405.76,
+            "pnl_percent": -6.506912442396315,
+            "lock_status": "SELLABLE",
+            "sellable_quantity": 1
+          },
+          {
+            "ticker": "NVDA",
+            "total_quantity": 1,
+            "average_cost": 191.83,
+            "current_price": 184.77,
+            "pnl_percent": -3.68034196945212,
+            "lock_status": "SELLABLE",
+            "sellable_quantity": 1
+          }
+        ],
+        "cash_available": 887.7750000000001,
+        "total_value": 1478.31
+      },
+      "market_snapshot": {
+        "top_3": [
+          "NVDA",
+          "LITE",
+          "MSFT"
+        ],
+        "rankings": {
+          "NVDA": {
+            "rank": 1,
+            "score": 7.3,
+            "price": 184.77
+          },
+          "LITE": {
+            "rank": 2,
+            "score": 6.0,
+            "price": 672.0
+          },
+          "MSFT": {
+            "rank": 3,
+            "score": 5.8,
+            "price": 405.76
+          },
+          "GOOGL": {
+            "rank": 4,
+            "score": 5.2,
+            "price": 307.04
+          },
+          "EOSE": {
+            "rank": 5,
+            "score": 5.2,
+            "price": 6.41
+          },
+          "NBIS": {
+            "rank": 6,
+            "score": 5.2,
+            "price": 96.43
+          },
+          "CRWV": {
+            "rank": 7,
+            "score": 5.2,
+            "price": 74.92
+          },
+          "AMZN": {
+            "rank": 8,
+            "score": 4.6,
+            "price": 214.33
+          },
+          "VST": {
+            "rank": 9,
+            "score": 4.0,
+            "price": 164.4
+          },
+          "IAU": {
+            "rank": 10,
+            "score": 4.0,
+            "price": 97.85
+          },
+          "TAIL": {
+            "rank": 11,
+            "score": 3.8,
+            "price": 11.7
+          }
+        },
+        "benchmark_spy_30d": -1.95
+      },
+      "recommendation": {
+        "actions": [
+          {
+            "type": "HOLD",
+            "ticker": "NVDA",
+            "amount": "1 shares",
+            "reasoning": "EVENT ASSESSMENT: The 'massive compute deal' with Thinking Machines Lab is NVDA making a commercial partnership/sale, NOT an M&A event. This is a demand validation event - another major customer signing a large GPU compute deal. THESIS VALIDATION: This directly validates the earnings_optimism narrative. Billion-dollar GPU deals continue to materialize, confirming NVDA's dominant position in AI compute infrastructure. The deal with Thinking Machines Lab adds to the growing list of enterprise AI c",
+            "valid": true,
+            "quantity": 1.0
+          },
+          {
+            "type": "HOLD",
+            "ticker": "MSFT",
+            "amount": "1 shares",
+            "reasoning": "EVENT 1 (EARNINGS): The news about 'Personal CFO Solutions LLC Buys 1,674 Shares' is NOT an earnings event - it's institutional buying, which is mildly bullish. No actual earnings report detected. EVENT 3 (MA - Codelco Deal): MSFT is the ACQUIRER/PARTNER in an AI deal for mining operations with Codelco (Chilean copper company). This is a commercial partnership expanding Azure AI into industrial/mining sector - NOT a material M&A event affecting valuation. THESIS VALIDATION: Both events are mildl",
+            "valid": true,
+            "quantity": 1.0
+          },
+          {
+            "type": "BUY",
+            "ticker": "NVDA",
+            "amount": "$300",
+            "reasoning": "CASH FLOW CALCULATION: Starting cash $887.78. No sells recommended. Monthly budget is $300. Using $300 of available cash for position addition. Remaining cash after purchase: $887.78 - $300 - $1 fee = $586.78. ENTRY RATIONALE: NVDA is #1 ranked with Score=7.3, exceptional 73.2% revenue growth, RSI=46.8 (neutral, not overbought). Current price $184.77 offers reasonable entry. No earnings within 7 days (calendar clear). New Thinking Machines Lab deal validates demand thesis. Adding to existing win",
+            "valid": true,
+            "expected_quantity": null
+          }
+        ],
+        "overall_strategy": "Maintain current 2-position portfolio structure with both holdings in top-3 rankings. Deploy monthly capital into highest-conviction position (NVDA #1) rather than adding correlated third position (LITE). Both material events analyzed were commercial partnerships, not structural changes - thesis intact for both holdings. MSFT requires continued monitoring given -6.5% P&L approaching stop-loss territory, but multiple bullish signals (insider buying, institutional buying, partnership reaffirmation",
+        "confidence": "HIGH",
+        "risk_warnings": [
+          "MSFT at -6.5% P&L, only ~$15 buffer to -10% stop-loss trigger at ~$390.60 - requires close monitoring",
+          "Adding to NVDA increases single-stock concentration to ~27% of portfolio - acceptable but approaching caution zone",
+          "Both positions have AI/tech correlation - sector-wide pullback would impact entire portfolio",
+          "NVDA succession planning concern (no clear CEO successor) remains unresolved long-term governance risk"
+        ]
+      },
+      "execution": {
+        "matched_at": null,
+        "trades_matched": []
+      },
+      "simulation": null
+    },
+    {
+      "id": "rec_20260311_134708",
+      "timestamp": "2026-03-11T13:47:08.103701",
+      "outcome": "pending",
+      "outcome_timestamp": null,
+      "portfolio_snapshot": {
+        "positions": [
+          {
+            "ticker": "MSFT",
+            "total_quantity": 1,
+            "average_cost": 434.0,
+            "current_price": 405.76,
+            "pnl_percent": -6.506912442396315,
+            "lock_status": "SELLABLE",
+            "sellable_quantity": 1
+          },
+          {
+            "ticker": "NVDA",
+            "total_quantity": 1,
+            "average_cost": 191.83,
+            "current_price": 184.77,
+            "pnl_percent": -3.68034196945212,
+            "lock_status": "SELLABLE",
+            "sellable_quantity": 1
+          }
+        ],
+        "cash_available": 887.7750000000001,
+        "total_value": 1478.31
+      },
+      "market_snapshot": {
+        "top_3": [
+          "NVDA",
+          "LITE",
+          "MSFT"
+        ],
+        "rankings": {
+          "NVDA": {
+            "rank": 1,
+            "score": 7.3,
+            "price": 184.77
+          },
+          "LITE": {
+            "rank": 2,
+            "score": 6.0,
+            "price": 672.0
+          },
+          "MSFT": {
+            "rank": 3,
+            "score": 5.8,
+            "price": 405.76
+          },
+          "GOOGL": {
+            "rank": 4,
+            "score": 5.2,
+            "price": 307.04
+          },
+          "EOSE": {
+            "rank": 5,
+            "score": 5.2,
+            "price": 6.41
+          },
+          "NBIS": {
+            "rank": 6,
+            "score": 5.2,
+            "price": 96.43
+          },
+          "CRWV": {
+            "rank": 7,
+            "score": 5.2,
+            "price": 74.92
+          },
+          "AMZN": {
+            "rank": 8,
+            "score": 4.6,
+            "price": 214.33
+          },
+          "VST": {
+            "rank": 9,
+            "score": 4.0,
+            "price": 164.4
+          },
+          "IAU": {
+            "rank": 10,
+            "score": 4.0,
+            "price": 97.85
+          },
+          "TAIL": {
+            "rank": 11,
+            "score": 3.8,
+            "price": 11.7
+          }
+        },
+        "benchmark_spy_30d": -1.95
+      },
+      "recommendation": {
+        "actions": [
+          {
+            "type": "HOLD",
+            "ticker": "NVDA",
+            "amount": "1 shares",
+            "reasoning": "EVENT ASSESSMENT: The Thinking Machines Lab 'massive compute deal' is NVDA making a commercial agreement (not an acquisition). This is a customer deal, not M&A activity. THESIS VALIDATION: This strongly validates the investment thesis - continued billion-dollar GPU deals demonstrate sustained AI infrastructure demand. NVDA remains #1 ranked with Score=7.3, far ahead of alternatives. RSI=46.8 is neutral, not overbought. P&L at -3.7% is well within normal volatility range and nowhere near -10% sto",
+            "valid": true,
+            "quantity": 1.0
+          },
+          {
+            "type": "HOLD",
+            "ticker": "MSFT",
+            "amount": "1 shares",
+            "reasoning": "EVENT ASSESSMENT (Earnings): The 'earnings' tag is misleading - the article is about Personal CFO Solutions LLC buying 1,674 shares, which is INSTITUTIONAL BUYING, not an earnings report. No actual earnings event occurred. This adds to the insider_buying narrative (director's 5,000 shares + now this institutional purchase). EVENT ASSESSMENT (Codelco AI Deal): MSFT is the ACQUIRER/partner in an AI deal for mining operations with Codelco. This is a commercial partnership expanding Azure AI into in",
+            "valid": true,
+            "quantity": 1.0
+          }
+        ],
+        "overall_strategy": "Maintain current 2-position portfolio in top-ranked stocks (NVDA #1, MSFT #3). Both positions are sellable but neither triggers exit criteria. NVDA thesis strengthened by continued major compute deals. MSFT thesis intact despite -6.5% drawdown - institutional buying and AI deal expansion are supportive. Cash position of $887.78 could fund LITE entry (#2 ranked), but correlation risk with existing NVDA position (both AI/semiconductor adjacent) and neutral RSI=56.3 make timing suboptimal. Prefer t",
+        "confidence": "MEDIUM",
+        "risk_warnings": [
+          "MSFT at -6.5% P&L is approaching -10% stop-loss threshold. If price drops to ~$390.60, mandatory exit required. Monitor closely.",
+          "Both positions are in AI-correlated stocks. A sector-wide AI sentiment shift would impact entire portfolio.",
+          "NVDA succession planning concern (no clear Jensen Huang successor) remains unresolved long-term governance risk.",
+          "High cash position ($887.78) represents opportunity cost if market rallies, but provides buffer for stop-loss execution or better entry."
         ]
       },
       "execution": {

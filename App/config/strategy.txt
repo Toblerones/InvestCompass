@@ -29,7 +29,7 @@ ENTRY CRITERIA:
 - Technical timing: Prefer RSI < 50 or at support levels (not mandatory)
 - Earnings proximity: Avoid entry within 7 days of earnings (uncertainty)
 - News sentiment: No major negative catalysts in past 7 days
-- Capital efficiency: Use new monthly capital first, swap only if compelling
+- Capital efficiency: Default to existing cash and swap proceeds. Only when a HIGH confidence opportunity exists and existing cash is insufficient, suggest the user consider making their monthly deposit to fund the position. Never assume a deposit has been made.
 
 EXIT CRITERIA (All subject to 30-day minimum hold):
 - Mandatory exits:
