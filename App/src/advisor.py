@@ -96,8 +96,12 @@ def cmd_run(args):
         ))
 
     # Get AI recommendation (with narrative context + market data for event analysis)
-    print(colorize("Getting AI recommendation...", Colors.DIM))
-    recommendation = get_recommendation(context, strategy, narratives, market_data)
+    manual = getattr(args, 'manual', False)
+    if manual:
+        print(colorize("Manual mode: building prompt for manual LLM input...", Colors.DIM))
+    else:
+        print(colorize("Getting AI recommendation...", Colors.DIM))
+    recommendation = get_recommendation(context, strategy, narratives, market_data, manual_mode=manual)
 
     # Process narrative updates from AI response
     narrative_updates = recommendation.get('narrative_updates', {})
@@ -174,7 +178,8 @@ def cmd_confirm(args):
     print("Format examples:")
     print("  sold GOOGL 28 shares at 175.50")
     print("  bought NVDA 10 shares at 450.00")
-    print("  add cash 500")
+    print("  add cash 500          - Add to cash balance")
+    print("  set cash 666          - Set cash to exact amount (use for currency conversion)")
     print()
 
     changes_made = False
@@ -231,7 +236,17 @@ def process_trade_input(user_input: str, portfolio: dict) -> str:
         try:
             amount = float(words[2].replace('$', '').replace(',', ''))
             portfolio['cash_available'] = portfolio.get('cash_available', 0) + amount
-            return f"Added ${amount:,.2f} to cash"
+            return f"Added ${amount:,.2f} to cash. New balance: ${portfolio['cash_available']:,.2f}"
+        except (IndexError, ValueError):
+            return ""
+
+    # Handle "set cash" command — direct override (e.g. for currency conversion)
+    if action == 'set' and len(words) >= 3 and words[1] == 'cash':
+        try:
+            amount = float(words[2].replace('$', '').replace(',', ''))
+            old = portfolio.get('cash_available', 0)
+            portfolio['cash_available'] = amount
+            return f"Cash set to ${amount:,.2f} (was ${old:,.2f})"
         except (IndexError, ValueError):
             return ""
 
@@ -314,6 +329,18 @@ def process_trade_input(user_input: str, portfolio: dict) -> str:
                 if on_idx + 1 < len(words):
                     purchase_date = words[on_idx + 1]
 
+            # Confirm before writing
+            cost = qty * price
+            cash_after = portfolio.get('cash_available', 0) - cost
+            print(f"\n  About to record: BUY {ticker} {qty} share(s) @ ${price:.2f}/share")
+            print(f"  Total cost: ${cost:,.2f}  |  Cash after: ${cash_after:,.2f}")
+            try:
+                confirm_input = input("  Confirm? (y/n): ").strip().lower()
+            except (EOFError, KeyboardInterrupt):
+                return "Cancelled."
+            if confirm_input != 'y':
+                return "Cancelled."
+
             # New lot
             new_lot = {
                 'quantity': qty,
@@ -342,7 +369,6 @@ def process_trade_input(user_input: str, portfolio: dict) -> str:
                 })
 
             # Deduct cost from cash
-            cost = qty * price
             portfolio['cash_available'] = portfolio.get('cash_available', 0) - cost
 
             # Calculate unlock date
@@ -830,6 +856,7 @@ Commands:
 
 Examples:
   python -m src.advisor              # Full analysis
+  python -m src.advisor --manual     # Save prompt to file, read response from stdin
   python -m src.advisor check        # Quick status
   python -m src.advisor confirm      # Record trades
   python -m src.advisor sim --list   # List past recommendations
@@ -863,6 +890,11 @@ Examples:
         dest='sim_summary',
         action='store_true',
         help='Show ledger summary statistics'
+    )
+    parser.add_argument(
+        '--manual',
+        action='store_true',
+        help='Skip API call: save prompt to file and read LLM response from stdin'
     )
 
     args = parser.parse_args()

@@ -1,0 +1,205 @@
+# CR010 — Introduce Signal Hierarchy to Resolve Conflicting Decision Factors
+
+**Date**: March 20, 2026
+**Status**: Open
+**Priority**: HIGH
+**Severity**: Enhancement
+**Affects**: AI Advisor Strategy Prompt — Layer 3 Reasoning Frameworks
+
+---
+
+## Related
+
+- **CR009**: Judgment-based reasoning redesign — introduced the three-layer architecture and reasoning frameworks that this CR extends
+- **CR008**: Monthly budget misinterpretation fix
+- **CR007**: Recommendation ledger
+
+---
+
+## 1. Problem Description
+
+The Layer 3 reasoning frameworks introduced in CR009 define *what questions to ask* before making a decision, but do not define *how to weigh the answers when they conflict*. When multiple signals point in different directions, the LLM has no explicit guidance on which signal takes precedence — so it defaults to whichever signal is most explicitly stated in the prompt, which is often RSI.
+
+This means technical indicators (RSI) are implicitly winning over material fundamental signals, which inverts the intended priority of the strategy.
+
+### 1.1 Observed Failure Mode
+
+**LITE entry decision (March 20, 2026):**
+
+| Signal | Direction | Type |
+|---|---|---|
+| Rank #3 | Favorable | Fundamental |
+| No negative news | Favorable | Fundamental |
+| Cash available post-MSFT exit | Favorable | Portfolio |
+| RSI 55.6 (above 50) | Unfavorable | Technical |
+| NVDA just averaged down (correlation) | Unfavorable | Portfolio |
+
+Three signals favorable, two unfavorable. RSI was the deciding factor — entry deferred purely on RSI timing. This is the correct outcome in this specific case (no compelling positive catalyst to override technicals), but it was reached for the wrong reason. The framework gave no basis for the LLM to distinguish between:
+
+- "RSI wins because there is no stronger signal"
+- "RSI wins because RSI is always the gating criterion"
+
+If LITE had a major positive catalyst — a direct NVDA partnership announcement, a blowout earnings pre-announcement — the current framework gives the LLM no clear basis to override the RSI signal. The technical indicator and the material fundamental event are treated as equal inputs.
+
+### 1.2 The Core Design Gap
+
+CR009 established that the advisor should reason like an experienced investor, not check conditions mechanically. But without a signal hierarchy, the LLM still defaults to whichever signal is most explicit — and RSI has the most explicit threshold in the current prompt (`RSI < 50` for favorable entry). This creates a de facto RSI gate that was never intended to be one.
+
+---
+
+## 2. What the Signal Hierarchy Should Be
+
+Signals should be weighted by their informational quality and persistence. Fundamental signals reflect durable business reality. Technical signals reflect short-term sentiment and momentum. Material events are the highest-quality signal because they represent new, concrete information about the business.
+
+The intended hierarchy, from highest to lowest weight:
+
+| Priority | Signal type | Examples | Nature |
+|---|---|---|---|
+| 1 | Hard constraints | 30-day hold, -10% stop-loss, earnings proximity | Non-negotiable, always win |
+| 2 | Material fundamental events | Earnings beat/miss, CEO departure, major contract, regulatory action | New concrete information — overrides technical timing |
+| 3 | Fundamental rank | Top 3 required for entry | Reflects ongoing business quality assessment |
+| 4 | Thesis integrity | Is the original investment case intact? | Durable assessment, updated by news |
+| 5 | Portfolio-level signals | Concentration, correlation, cash buffer | Structural constraints on position sizing |
+| 6 | Technical timing | RSI, support levels, 30-day vs SPY | Soft preference — improves entry price, never blocks a strong fundamental case |
+
+---
+
+## 3. Proposed Change
+
+Add a **Signal Hierarchy** section to Layer 3 of the strategy prompt, placed before the individual frameworks. This makes explicit how conflicting signals should be resolved, and demotes RSI from an implicit gate to an explicit tiebreaker.
+
+### 3.1 New Section: Signal Hierarchy
+
+```
+--- Signal Hierarchy: How to resolve conflicting inputs ---
+
+When signals conflict, resolve them in this order. A higher-priority
+signal always outweighs a lower-priority one. Do not let a weak signal
+block a strong one.
+
+PRIORITY 1 — Hard constraints (Layer 1)
+  Always enforced. No signal overrides these.
+  Examples: 30-day hold, -10% stop-loss, earnings proximity rules.
+
+PRIORITY 2 — Material fundamental events
+  New, concrete information about the business.
+  A material event (earnings result, major contract, CEO departure,
+  regulatory action) is the highest-quality signal available.
+  When a material event is present, it overrides technical timing.
+  Examples:
+    - Major positive catalyst (large contract, earnings beat, guidance raise)
+      → enter even if RSI is above 50
+    - Major negative catalyst (earnings miss, rank collapse, leadership failure)
+      → exit even if RSI is oversold and appears cheap
+
+PRIORITY 3 — Fundamental rank
+  Must be top 3 for entry. This is a hard gate, but rank alone
+  is not sufficient to override a negative material event.
+
+PRIORITY 4 — Thesis integrity
+  Is the original investment case intact, strengthening, or weakening?
+  A weakening thesis (even without a single dramatic event) should
+  outweigh favorable technical signals.
+
+PRIORITY 5 — Portfolio-level signals
+  Concentration, correlation, cash buffer requirements.
+  These constrain position sizing but do not override fundamental signals.
+
+PRIORITY 6 — Technical timing (RSI, support levels, vs SPY)
+  A soft preference that improves entry and exit timing.
+  RSI < 50 is a favorable entry signal, not a gate.
+  RSI > 50 defers entry only when no stronger signal is present.
+  A strong fundamental case (Priority 2 or 4) overrides RSI entirely.
+
+CONFLICT RESOLUTION RULE:
+  When signals conflict, state explicitly which priority level each
+  signal belongs to, which is winning, and why. Never let a
+  lower-priority signal block a higher-priority one silently.
+```
+
+### 3.2 Update to Framework C (New Entry)
+
+Replace the current entry timing step:
+
+**Current wording:**
+```
+2. Is entry timing favorable?
+   - RSI < 50 or at technical support: favorable
+   - Within 7 days of earnings: do not enter
+   - No major negative catalyst in past 7 days: required
+```
+
+**Revised wording:**
+```
+2. Is there a material fundamental signal? (Priority 2 — check first)
+   - Major positive catalyst in past 7 days (large contract, earnings beat,
+     guidance raise, strategic partnership): favorable entry regardless of RSI
+   - Major negative catalyst in past 7 days: do not enter regardless of RSI
+   - No material signal: proceed to technical timing check
+
+3. Is entry timing favorable? (Priority 6 — only if no material signal)
+   - RSI < 50 or at technical support: favorable
+   - RSI > 50 with no material positive signal: defer entry, use WAIT
+   - Within 7 days of earnings: do not enter (hard constraint, Priority 1)
+```
+
+---
+
+## 4. Concrete Example: How This Changes Decisions
+
+### Scenario A — LITE with no catalyst (current situation)
+- Rank #3 ✅
+- No material news
+- RSI 55.6 ❌
+
+Signal hierarchy: no Priority 2 signal present → RSI (Priority 6) is the deciding input.
+Decision: **WAIT** — same as current, but now for an explicit reason.
+
+### Scenario B — LITE with major positive catalyst
+- Rank #3 ✅
+- NVDA announces direct LITE partnership (material event) ✅
+- RSI 55.6 ❌
+
+Signal hierarchy: Priority 2 material event present → overrides RSI.
+Decision: **BUY** — entry recommended despite RSI above 50.
+
+### Scenario C — NVDA with oversold RSI but thesis weakening
+- Rank #1 ✅
+- RSI 28 (oversold) — appears very cheap ✅
+- Rank slipping from #1 toward #3, guidance cut announced ❌
+
+Signal hierarchy: Priority 4 thesis weakening + Priority 2 negative catalyst → override RSI.
+Decision: **Do not average down** despite oversold RSI — thesis integrity wins.
+
+---
+
+## 5. What Does Not Change
+
+- Layer 1 hard constraints — unchanged
+- Layer 2 principles — unchanged
+- Frameworks A, B, D — unchanged (signal hierarchy applies implicitly to all)
+- WAIT action type (introduced in CR009) — unchanged
+- RSI remains a valid and useful input — it is demoted from gate to tiebreaker, not removed
+- All other prompt sections — unchanged
+
+---
+
+## 6. Success Criteria
+
+| Scenario | Expected Advisor Behaviour |
+|---|---|
+| Strong positive catalyst, RSI above 50 | Enters position; explicitly states material event overrides RSI |
+| Strong negative catalyst, RSI oversold | Does not enter or average down; explicitly states thesis integrity overrides RSI |
+| No material news, RSI above 50 | Defers entry (WAIT); RSI is the deciding factor and stated as such |
+| No material news, RSI below 50 | Favorable entry timing noted; still requires rank and thesis check |
+| Conflicting signals present | Advisor states which priority level each signal belongs to and which wins |
+
+---
+
+## 7. Out of Scope
+
+- No changes to how RSI is calculated or sourced
+- No changes to the ranking algorithm or fundamental scoring
+- No new data inputs added to the prompt
+- No changes to the CLI, portfolio tracking, or response format
+- This is a prompt architecture change only — no application code changes required

@@ -1,0 +1,157 @@
+# CR009 — Redesign Advisor Strategy: From Rules to Judgment-Based Reasoning
+
+**Date**: March 19, 2026
+**Status**: Open
+**Priority**: HIGH
+**Severity**: Enhancement
+**Affects**: AI Advisor Strategy Prompt
+
+---
+
+## Related
+
+- **CR006**: Lot-based position tracking — introduced the detailed cash flow calculations the advisor uses
+- **CR007**: Recommendation ledger — stores recommendation reasoning for audit and review
+- **CR008**: Monthly budget misinterpretation fix — clarified that budget is external capital, not available cash
+
+---
+
+## 1. Problem Description
+
+The current InvestCompass advisor prompt is architected primarily as a rules engine. Decision logic is expressed as explicit conditional thresholds — fixed percentages, rank-based gates, and tiered stop-loss rules — that the AI checks and applies mechanically.
+
+This design undermines the core value proposition of using an LLM as an advisor. An LLM's strength is synthesis and contextual judgment — not condition-checking, which a spreadsheet can do more reliably.
+
+### 1.1 Observed Failure Modes
+
+- Averaging down blocked by rule even when thesis has strengthened (e.g. NVDA post-earnings beat, RSI oversold, price down due to macro — advisor holds cash because P&L is at -5.2%)
+- Exit signals fire mechanically without assessing root cause of the price move (macro selloff vs fundamental deterioration treated identically)
+- Swap decisions based on fixed $50 threshold rather than holistic opportunity cost reasoning
+- HOLD recommendations on new entries (stocks not owned) use the HOLD action type, creating confusion — advisor appears to recommend holding a position the user does not have
+- Cash sits idle when the #1 ranked stock is oversold post-earnings beat, because no rule explicitly authorises averaging down
+
+### 1.2 Concrete Example — Missed Averaging Down Opportunity (March 2026)
+
+```
+NVDA: Rank #1, RSI 37.2 (oversold), P&L -5.2%, just reported $68B revenue beat (+73% YoY),
+guidance raised to $78B Q1 FY2027. Cash available: $887.78.
+
+Advisor recommendation: HOLD cash. No averaging down suggested.
+Reason: P&L < -5% threshold in the stop-loss tightening rule blocked action.
+
+Correct action: Average down — thesis materially strengthened, weakness is macro not fundamental.
+```
+
+---
+
+## 2. What the Advisor Should Do Instead
+
+The advisor should reason like a disciplined, experienced investor who has access to all portfolio data, market context, news, and rankings — and synthesises them into a judgment call. Rules should guide that reasoning, not replace it.
+
+The key questions the advisor must answer for any decision are:
+
+- Why is the price moving — macro, sentiment, or stock-specific fundamentals?
+- Has the original investment thesis strengthened, weakened, or stayed the same?
+- What does the risk/reward look like from the current price?
+- What is the opportunity cost of inaction?
+- What would a disciplined investor with full context do?
+
+---
+
+## 3. Proposed Change
+
+Redesign the strategy section of the advisor prompt using a three-layer architecture. This replaces the current flat list of rules with a structured reasoning framework.
+
+### Layer 1 — Hard Constraints (unchanged)
+
+Truly non-negotiable rules that are structural or regulatory. The LLM must never reason around these.
+
+| Constraint | Reason |
+|---|---|
+| 30-day minimum hold (FIFO) | Regulatory — prevents emotional short-term reactions |
+| Cannot sell locked positions | Regulatory — hard enforcement of hold period |
+| Maximum 3 positions | Portfolio structure — concentration discipline |
+| No position > 50% of portfolio | Risk management — catastrophic loss prevention |
+| Hard stop-loss at -10% | Capital preservation — non-negotiable floor |
+| Profit target exit at +20% | Discipline — lock gains, avoid greed |
+
+### Layer 2 — Principles (new)
+
+Replaces rigid thresholds with guiding principles that explain the *why* behind good decisions. The LLM uses these to calibrate its reasoning, not as conditions to check.
+
+| Principle | What it means in practice |
+|---|---|
+| Price drop ≠ thesis broken | Always ask why it is falling before deciding to exit |
+| Cost of inaction is real | Holding cash when the #1 stock is oversold is a decision with a cost |
+| Conviction before action | Only swap if conviction in current holding has weakened on its own merits |
+| Macro ≠ stock-specific risk | Do not penalise a holding for a market-wide selloff |
+| Averaging down is a tool | Valid when weakness is macro-driven and thesis is intact or strengthening |
+| Patience beats FOMO | Missing an entry due to locked capital is acceptable |
+
+### Layer 3 — Reasoning Frameworks (new)
+
+Structured question sequences the LLM works through explicitly before making each decision type. These replace tiered exit rules, averaging down thresholds, and swap benefit calculations.
+
+| Framework | Key questions |
+|---|---|
+| A: Should I exit this position? | Why is it falling? Is the thesis broken (how many signals)? What does the loss level tell me? What is the opportunity cost of holding? Are there timing constraints? |
+| B: Should I average down? | Why is the position down? Has the thesis strengthened, weakened, or held? What is the new risk/reward after averaging? Does the cash buffer and concentration check pass? |
+| C: Should I enter a new position? | Is it ranked top 3? Is entry timing favorable (RSI, earnings proximity)? Does it fit the portfolio (correlation, concentration)? What is the capital source? |
+| D: Is this news material or noise? | Does it change earnings trajectory, competitive position, or management quality? How many credible sources cover it? Does it meet the threshold for an actionable thesis change? |
+
+---
+
+## 4. Additional Fix: Introduce WAIT Action Type
+
+The current prompt uses HOLD for two distinct situations that should be communicated differently:
+
+- **HOLD** — you own this stock, keep it
+- **HOLD** (misused) — you do not own this stock, but the entry is deferred
+
+This creates confusion. A user seeing HOLD on LITE (which they do not own) reasonably expects it means they have a position.
+
+**Fix**: Add a WAIT action type to the response format.
+
+| Action type | Meaning |
+|---|---|
+| BUY | Enter or add to a position |
+| SELL | Exit or reduce a position |
+| HOLD | You own this stock — keep it as-is |
+| WAIT | You do not own this stock — entry deferred, conditions not yet right |
+
+---
+
+## 5. What Does Not Change
+
+- 30-day hold and FIFO enforcement
+- Hard stop-loss at -10% and profit target at +20%
+- Monthly budget handling (per CR008)
+- Sequential cash flow calculation
+- Material events deep analysis requirement
+- Narrative tracking and update format
+- JSON response format — unchanged except addition of WAIT type
+- Earnings calendar rules (no buy within 7 days, no sell within 3 days)
+
+---
+
+## 6. Success Criteria
+
+| Scenario | Expected Advisor Behaviour |
+|---|---|
+| Stock down due to macro, thesis intact, RSI oversold | Reasons through averaging down opportunity; recommends BUY if risk/reward favorable |
+| Stock down due to earnings miss + rank slip | Identifies 2+ thesis-breaking signals; recommends EXIT when eligible |
+| Stock down due to macro, rank unchanged, no news | Holds position; explains macro vs stock-specific distinction explicitly |
+| Better opportunity available but current holding thesis intact | Does not swap; explains conviction in current holding |
+| Better opportunity available AND current holding rank slipped + loss | Considers swap; weighs opportunity cost explicitly |
+| Watchlist stock ranked #3, entry favorable but cash needed as buffer | Returns WAIT (not HOLD); explains deferral reason clearly |
+| NVDA post-earnings beat, RSI 37, P&L -5%, macro-driven weakness | Recommends averaging down with explicit risk/reward reasoning |
+
+---
+
+## 7. Out of Scope
+
+- No changes to how portfolio cash balance is tracked or updated
+- No changes to the stock ranking algorithm or fundamental scoring
+- No new data inputs added to the prompt
+- No changes to the CLI or user interface
+- This is a prompt architecture change only — no application code changes required

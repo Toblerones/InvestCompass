@@ -1,0 +1,224 @@
+# CR012 — Cash Efficiency: Portfolio-Level Capital Deployment
+
+**Date**: March 20, 2026
+**Status**: Open
+**Priority**: HIGH
+**Severity**: Enhancement
+**Affects**: AI Advisor Strategy Prompt — Layer 2 Principles and Layer 3 Reasoning Frameworks
+
+---
+
+## Related
+
+- **CR009**: Judgment-based reasoning redesign — introduced the principle "cost of inaction is real" but did not operationalise it at portfolio level
+- **CR010**: Signal hierarchy — individual stock entry signals correctly prioritised, but no cross-stock capital efficiency reasoning
+- **CR011**: Narrative boundary rule — clean data foundation required before portfolio-level reasoning is reliable
+
+---
+
+## 1. Problem Description
+
+The InvestCompass advisor evaluates each stock entry decision independently. It asks "should I enter MSFT?" and "should I enter LITE?" as separate questions, applying per-stock signal checks. It has no mechanism to step back and ask: "given my total cash position and conviction set, am I deploying capital efficiently?"
+
+This creates a systematic bias toward cash hoarding. Cash is implicitly treated as the safe default — it accumulates when individual entry conditions are not perfectly met, and the framework never challenges whether holding 87% cash is itself a poor decision.
+
+### 1.1 Observed Instance (March 20, 2026)
+
+Portfolio state after MSFT stop-loss exit:
+- NVDA: 1 share @ $178.56 (13% of total portfolio value)
+- Cash: $1,275.78 (87% of total portfolio value)
+
+Advisor recommendation: HOLD NVDA, WAIT on MSFT, WAIT on LITE.
+
+Both WAIT decisions are individually correct — MSFT has an active Priority 2 negative catalyst, LITE has unfavorable RSI with no offsetting positive signal.
+
+But the portfolio-level outcome is that $1,275 is sitting completely idle while:
+- NVDA is ranked #1 with a strengthening thesis, down -6.9% in a macro selloff
+- Framework B (averaging down) was not invoked despite cash far exceeding the position value
+- The "cost of inaction" principle (Layer 2, Principle 2) exists but was not applied to the cash imbalance
+
+The advisor correctly handled each individual decision. It failed to handle the portfolio as a whole.
+
+### 1.2 Root Cause
+
+Layer 2 Principle 2 states: *"Cost of inaction is real — holding cash while the #1 ranked stock is oversold is a decision with a cost. Quantify the opportunity explicitly before recommending HOLD cash."*
+
+This principle exists but is not operationalised. There is no framework that triggers when cash exceeds a meaningful threshold, no instruction to reason about cash/equity balance, and no prompt to consider more aggressive averaging down when a high-conviction position is available at a discount.
+
+The result: the advisor treats "no perfect entry available" as equivalent to "hold all cash" — which is not what a disciplined investor would do.
+
+---
+
+## 2. The Missing Concept: Cash Drag
+
+Cash drag is the opportunity cost of uninvested capital. In a concentrated conviction portfolio (2-3 positions), holding >50% cash for an extended period is not conservative — it is a failure to deploy capital into high-conviction ideas.
+
+The framework needs to distinguish between:
+
+| Cash level | Interpretation |
+|---|---|
+| 10-30% cash | Healthy buffer — normal operating range |
+| 30-50% cash | Elevated — review whether top-ranked stocks merit deployment |
+| >50% cash | Cash drag — requires explicit justification; default should be to deploy |
+| >75% cash | Severe cash drag — mandate active capital deployment review |
+
+Cash drag does not mean deploy blindly. It means the burden of proof flips: instead of asking "is there a good enough reason to invest?", the advisor should ask "is there a good enough reason to stay in cash?"
+
+---
+
+## 3. Proposed Changes
+
+### 3.1 Add Cash Drag Principle to Layer 2
+
+Add as Principle 9:
+
+```
+9. Cash drag is a risk, not a safe default
+   Holding >50% of portfolio value in cash is not conservative — it is a
+   failure to deploy capital in high-conviction ideas. When cash exceeds
+   50% of total portfolio value, the burden of proof flips: the advisor
+   must justify staying in cash, not justify investing.
+   Cash is appropriate when: no top-3 stocks are available, all positions
+   are locked, or a clear macro event warrants temporary defensive posture.
+   Cash is not appropriate when: top-ranked stocks are available at a
+   discount with intact or strengthening theses.
+```
+
+### 3.2 Add Framework E: Portfolio-Level Capital Deployment
+
+Add a new framework after Framework D, triggered whenever cash exceeds 50% of total portfolio value:
+
+```
+--- Framework E: Is my cash position justified? ---
+
+Trigger: Run this framework whenever cash > 50% of total portfolio value.
+Purpose: Ensure capital is being deployed efficiently across the conviction
+set, not hoarded by default.
+
+1. What is the current cash/equity ratio?
+   Calculate: cash / (cash + total position value)
+   - < 30%: healthy, no action needed from this framework
+   - 30-50%: elevated, note in reasoning but no mandatory action
+   - > 50%: cash drag — proceed through this framework
+   - > 75%: severe cash drag — strong presumption toward deployment
+
+2. What deployment options are available?
+   For each top-3 ranked stock, assess in order of rank:
+
+   Option A — Average down on existing positions
+     Is any held position down due to macro weakness with intact thesis?
+     If yes: averaging down is the priority use of excess cash.
+     Calculate: how many additional shares could be purchased?
+     What would the new average cost and stop-loss be?
+     Does concentration remain within limits after averaging?
+
+   Option B — Enter a new top-3 position despite imperfect timing
+     Is a top-3 stock available with a thesis-positive or neutral backdrop?
+     If technical timing is unfavorable (RSI > 50) but:
+       - No active Priority 2 negative catalyst, AND
+       - Cash drag is severe (> 75%), AND
+       - Stock is within 5% of a known support level
+     Then: consider entering despite RSI, with reduced position size
+     Rationale: imperfect entry in a high-conviction stock beats
+     perfect entry that never comes while cash erodes in real terms
+
+   Option C — Hold cash with explicit justification
+     Cash hold is only justified if ALL of the following are true:
+       - All top-3 stocks have active Priority 2 negative catalysts, OR
+       - All positions are locked and no new entries qualify, OR
+       - A clear macro event warrants defensive posture (state explicitly)
+     If none of the above: cash hold requires explicit reasoning in the
+     response, not just absence of a buy signal
+
+3. What is the opportunity cost of current cash position?
+   Estimate: if top-ranked stock recovers to analyst consensus target,
+   what return is foregone on the uninvested cash?
+   State this explicitly — do not let cash drag pass without quantifying
+   what the user is giving up.
+
+4. Recommended action
+   Based on steps 1-3, recommend one of:
+   - DEPLOY: Average down or enter new position with sizing rationale
+   - PARTIAL DEPLOY: Enter reduced position (e.g. 50% of available cash)
+     when timing is imperfect but cash drag is severe
+   - HOLD CASH: With explicit written justification per step 2 Option C
+```
+
+### 3.3 Update Framework B to Include Scale Guidance
+
+Add a step 5 to Framework B (averaging down):
+
+```
+5. How much should I average down given the cash position?
+   - If cash < 30% of portfolio: small addition only (preserve buffer)
+   - If cash 30-60% of portfolio: moderate addition (1-2 shares or
+     up to 30% of available cash)
+   - If cash > 60% of portfolio: consider larger addition (up to 50%
+     of available cash) — cash drag justifies more aggressive deployment
+     into highest conviction position
+   - Never deploy more than 50% of available cash in a single averaging
+     down action (preserve flexibility for stop-loss reallocation)
+```
+
+---
+
+## 4. Concrete Example: How This Changes the Current Situation
+
+**Current state:**
+- Cash: $1,275.78 (87% of portfolio)
+- NVDA: $178.56 (13% of portfolio), rank #1, thesis strengthening, macro weakness
+
+**Framework E triggered** (cash > 50%):
+
+Step 1: Cash ratio = 87% → severe cash drag, strong presumption toward deployment
+
+Step 2, Option A: NVDA is held, down -6.9%, macro-driven, thesis strengthening
+- Framework B conditions met for averaging down
+- Cash > 60% → larger addition warranted
+- Up to 50% of $1,275 = ~$637 available for averaging
+- At $178.56 per share: approximately 3 additional shares
+- New avg cost: (1 × $191.83 + 3 × $178.56) / 4 = $181.88
+- New stop-loss: $181.88 × 0.90 = $163.69
+- New position value: 4 × $178.56 = $714.24
+- Concentration: $714.24 / ($714.24 + $638) = 52.8% — borderline, reduce to 2 shares
+- 2 shares: new avg cost $183.41, new position value $535.68 = 42% of portfolio ✅
+
+Step 3: Opportunity cost of full cash hold — NVDA consensus PT $265.97, current $178.56
+- Upside to PT: 49% on $1,275 uninvested = ~$624 foregone if thesis plays out
+
+**Recommended action under CR012:** Average down NVDA by 2 shares (~$358 deployed),
+leaving ~$917 cash (65% → still elevated but materially reduced from 87%)
+
+---
+
+## 5. What Does Not Change
+
+- Layer 1 hard constraints — unchanged (50% concentration limit still enforced)
+- Signal hierarchy (CR010) — unchanged; Framework E is additive, not a replacement
+- Individual stock entry frameworks A, B, C, D — unchanged
+- Narrative boundary rule (CR011) — unchanged
+- Response format — unchanged
+- Hard stop-loss and profit target — unchanged
+
+---
+
+## 6. Success Criteria
+
+| Scenario | Expected Behaviour |
+|---|---|
+| Cash < 30%, top-3 stocks in portfolio | Framework E not triggered, normal per-stock reasoning |
+| Cash > 50%, top-ranked stock down due to macro, thesis intact | Framework E triggered; averaging down recommended with scale guidance |
+| Cash > 75%, no Priority 2 negative catalysts on top-3 stocks | Framework E triggered; deployment recommended even if RSI imperfect |
+| Cash > 50%, all top-3 stocks have active negative catalysts | Framework E triggered; cash hold explicitly justified with written reasoning |
+| Cash > 50%, averaging down would breach 50% concentration limit | Framework E triggered; partial deployment recommended up to concentration limit |
+| Cash hold recommended | Explicit opportunity cost stated in response (what return is foregone) |
+
+---
+
+## 7. Out of Scope
+
+- This CR does not change how the portfolio cash balance is tracked or updated
+- This CR does not introduce automatic trade execution
+- This CR does not override Priority 2 negative catalysts — a stock with an active negative catalyst still blocks entry even under cash drag conditions (except Option B partial deploy, which requires no active Priority 2 catalyst)
+- This CR does not change the 50% single-position concentration limit
+- This is a prompt architecture change only — no application code changes required

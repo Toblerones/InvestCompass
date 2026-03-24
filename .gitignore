@@ -3,9 +3,13 @@
 
 # Portfolio data (personal financial data)
 App/config/portfolio.json
+App/config/recommendations_ledger.json
 
 # Narrative memory (user-specific context)
 App/config/narratives.json
+
+# output prompt
+App/output
 
 # Python
 __pycache__/

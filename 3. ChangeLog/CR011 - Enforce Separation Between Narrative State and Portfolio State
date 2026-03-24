@@ -1,0 +1,226 @@
+# CR011 — Enforce Separation Between Narrative State and Portfolio State
+
+**Date**: March 20, 2026
+**Status**: Open
+**Priority**: HIGH
+**Severity**: Bug Fix
+**Affects**: AI Advisor Narrative Updates — Response Format and Prompt Instructions
+
+---
+
+## Related
+
+- **CR009**: Judgment-based reasoning redesign — introduced narrative tracking as a structured system
+- **CR010**: Signal hierarchy — narratives are used as Priority 2 material event inputs; contaminated narratives corrupt signal quality
+- **CR007**: Recommendation ledger — stores narrative history; bad narrative data persists across runs
+
+---
+
+## 1. Problem Description
+
+The InvestCompass advisor is writing portfolio execution state into narrative fields. Narratives are intended to track market intelligence — news themes, thesis evolution, analyst sentiment, technical patterns. Instead they are being used to record trade decisions, cost basis changes, and stop-loss levels that belong exclusively in the portfolio data block.
+
+This creates a data consistency hazard: when a recommended trade is not executed, the narrative reflects a portfolio state that does not exist. The advisor then reasons against fabricated portfolio data in subsequent runs.
+
+### 1.1 Observed Instance (March 20, 2026)
+
+The previous run recommended averaging down on NVDA at $178.56. The trade was not executed. The narrative was updated as if it had been:
+
+```
+earnings_optimism narrative (NVDA):
+"Averaging down initiated at $178.56. New average cost $185.20,
+new stop-loss $166.68."
+```
+
+The following run then had:
+- Portfolio block: avg cost $191.83 (correct — trade not executed)
+- Narrative: avg cost $185.20, stop-loss $166.68 (incorrect — reflects unexecuted trade)
+
+The advisor was reasoning against two contradictory sources of truth simultaneously. This produced:
+- A stop-loss warning referencing $172.65 (10% below $191.83 — correct)
+- Narrative context implying stop-loss of $166.68 (10% below $185.20 — phantom)
+- An MSFT action labelled HOLD when the reasoning concluded WAIT — likely caused by the advisor losing coherence from conflicting state
+
+### 1.2 Root Cause
+
+There is no explicit rule in the prompt separating what belongs in narratives from what belongs in the portfolio block. The narrative update instructions say:
+
+```
+- UPDATES: If an active theme has new developments, update the summary
+```
+
+This is too broad. "New developments" is being interpreted to include trade executions, which are portfolio events, not market events.
+
+---
+
+## 2. The Correct Architectural Separation
+
+Two distinct data domains must never overlap:
+
+| Domain | Owner | What it contains |
+|---|---|---|
+| Portfolio block | System (generated from trade records) | Actual positions, real avg cost, real cash, real P&L, lot status |
+| Narratives | Advisor (updated each run) | News themes, thesis evolution, analyst sentiment, price levels as market context |
+
+The portfolio block is always the single source of truth for all position data. The advisor reads it but never writes to it. Narratives are the advisor's market memory — they inform reasoning but never substitute for portfolio facts.
+
+### 2.1 The Clean Boundary Rule
+
+> Narratives answer: *what is the market telling us about this stock?*
+> Portfolio block answers: *what do we actually own and at what cost?*
+
+Narratives may reference price levels as market context — *"NVDA trading near $178, oversold relative to fundamentals"* — but must never reference the user's personal cost basis, stop-loss levels derived from cost basis, position size changes, or trade execution confirmations.
+
+---
+
+## 3. What Belongs Where
+
+### Allowed in narratives
+
+- News events and their significance (earnings, contracts, leadership, regulatory)
+- Analyst price targets and ratings changes
+- Thesis assessment — strengthening, intact, weakening, broken
+- Market price levels as external reference points (e.g. "stock trading near $178 support")
+- RSI and technical observations as market data
+- Competitive landscape developments
+- Macro context relevant to the stock
+
+### Never allowed in narratives
+
+| Prohibited content | Correct location |
+|---|---|
+| Avg cost / new avg cost after averaging | Portfolio block |
+| Stop-loss price levels (these derive from cost basis) | Portfolio block |
+| Position size (number of shares held) | Portfolio block |
+| "Averaging down initiated / executed" | Portfolio block |
+| "Position exited" | Portfolio block |
+| "Position entered at $X" | Portfolio block |
+| Cash remaining after trade | Portfolio block |
+
+---
+
+## 4. Proposed Changes
+
+### 4.1 Add Narrative Boundary Rule to Prompt
+
+Add the following section immediately before the narrative update instructions at the end of the prompt:
+
+```
+NARRATIVE BOUNDARY RULE (enforced):
+Narratives track market intelligence only — news, thesis, sentiment,
+analyst views, technical observations as market data.
+
+Narratives must NEVER contain:
+- Your cost basis or average cost
+- Stop-loss price levels (these derive from your cost basis)
+- Number of shares held or position size
+- Trade execution confirmations ("averaging down initiated", "position exited")
+- Cash balance or proceeds calculations
+
+These belong exclusively in the portfolio data block, which is
+generated from actual trade records and is always the source of truth.
+If the portfolio block and a narrative ever conflict, the portfolio
+block is correct. Disregard the narrative data and correct it.
+```
+
+### 4.2 Tighten Narrative Update Instructions
+
+**Current wording:**
+```
+NARRATIVE UPDATES (in addition to recommendations):
+After analyzing current conditions, update narratives for stocks you're tracking:
+- NEW themes: If a material theme (regulatory, earnings concern, acquisition, etc.)
+  has emerged, add it
+- UPDATES: If an active theme has new developments, update the summary
+- RESOLVE: If a theme has concluded (e.g., earnings beat resolves concern),
+  mark resolved
+```
+
+**Revised wording:**
+```
+NARRATIVE UPDATES (in addition to recommendations):
+After analyzing current conditions, update narratives for stocks you're tracking.
+Narratives track market intelligence only — never portfolio execution state.
+
+- NEW: If a material market theme has emerged (news event, regulatory development,
+  analyst view, competitive shift), add it with impact assessment
+- UPDATE: If an active theme has new market developments, update the summary.
+  Reference price levels only as external market data, never as your cost basis.
+- RESOLVE: If a theme has concluded (e.g. legal dispute settled, earnings result
+  confirmed), mark resolved with a one-line outcome summary
+
+Never write into narratives: cost basis, stop-loss levels, share counts,
+trade confirmations, or cash calculations. These live in the portfolio block only.
+```
+
+### 4.3 Add Conflict Detection Instruction
+
+Add the following to the YOUR TASK section:
+
+```
+PORTFOLIO VS NARRATIVE CONFLICT CHECK:
+Before reasoning, check whether any narrative contains portfolio state
+(cost basis, stop-loss levels, share counts, trade confirmations) that
+conflicts with the portfolio data block. If a conflict exists:
+1. The portfolio block is correct — disregard the narrative data
+2. Note the conflict explicitly in your reasoning
+3. Correct the offending narrative in your narrative_updates response
+```
+
+---
+
+## 5. Concrete Example — Before and After
+
+### Before (incorrect — portfolio state in narrative)
+
+```
+earnings_optimism (NVDA):
+"Amazon 1M chip deal and Planet Labs record revenue add two fresh
+demand-side confirmations. Averaging down initiated at $178.56.
+New average cost $185.20, new stop-loss $166.68."
+```
+
+### After (correct — market intelligence only)
+
+```
+earnings_optimism (NVDA):
+"Amazon 1M chip deal and Planet Labs record revenue add two fresh
+demand-side confirmations. Bank of America $1T+ trajectory, China AI
+ecosystem, Thinking Machines investment remain active. NVDA trading
+near $178 — oversold relative to fundamentals given macro selloff
+context. Thesis fully intact. No exit signals."
+```
+
+The stop-loss, avg cost, and trade confirmation are removed. Price level ($178) is retained as market context, not personal portfolio data.
+
+---
+
+## 6. Success Criteria
+
+| Scenario | Expected Behaviour |
+|---|---|
+| Advisor recommends averaging down, trade not executed | Narrative updated with market context only; no avg cost or stop-loss written; portfolio block unchanged and authoritative next run |
+| Advisor recommends exit, trade not executed | Narrative updated with market reasoning only; no "position exited" written; portfolio block remains the record |
+| Narrative and portfolio block conflict on cost basis | Advisor detects conflict, flags it, uses portfolio block, corrects narrative |
+| Narrative references analyst price target | Allowed — this is market data, not portfolio state |
+| Narrative references stock trading near a support level | Allowed — external market price, not personal cost basis |
+| Narrative references "our stop-loss at $166.68" | Not allowed — stop-loss derives from cost basis, belongs in portfolio block |
+
+---
+
+## 7. What Does Not Change
+
+- Narrative structure (add / update / resolve) — unchanged
+- Narrative themes and categories — unchanged
+- Portfolio data block format and content — unchanged
+- All reasoning frameworks — unchanged
+- Response JSON format — unchanged
+- This is a prompt instruction change only — no application code changes required
+
+---
+
+## 8. Out of Scope
+
+- This CR does not define how the portfolio block is generated or updated from trade records — that is a system concern outside the prompt
+- This CR does not add trade confirmation tracking to the CLI
+- This CR does not change how narratives are stored or retrieved between runs

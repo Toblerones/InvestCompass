@@ -20,7 +20,16 @@
   "stop_loss_percent": -10,
   "profit_target_percent": 20,
   "min_swap_benefit": 50,
-  
+
+  "investor_profile": {
+    "risk_tolerance": "Moderate",
+    "ai_thesis_conviction": "High",
+    "lock_period_comfort": "Medium",
+    "cash_buffer_preference": "Moderate",
+    "portfolio_significance": "Meaningful",
+    "drawdown_behaviour": "Hold through"
+  },
+
   "bk_watchlist": [
     "MSFT",
     "GOOGL",

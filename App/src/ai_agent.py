@@ -16,6 +16,7 @@ Key Functions:
 """
 
 import os
+import sys
 import json
 import re
 import time
@@ -137,11 +138,21 @@ def build_prompt(context: dict, strategy: str, narratives: dict = None,
     cash = context.get('cash_available', 0)
     transaction_fee = config.get('transaction_fee', 10)
 
+    # Format investor profile
+    profile_text = _format_investor_profile(config)
+
     # Format holdings for cash flow calculations
     positions = context.get('current_positions', [])
     holdings_cashflow = _format_holdings_for_cashflow(positions, transaction_fee)
 
     prompt = f"""You are a portfolio advisor managing a tech stock portfolio.
+
+INVESTOR PROFILE (active settings — apply to all recommendations):
+{profile_text}
+
+Refer to the Layer 0 definitions in STRATEGY PRINCIPLES for what each value means
+and how it modifies framework thresholds. When profile moderates a recommendation,
+state this explicitly in the reasoning field.
 
 STRATEGY PRINCIPLES:
 {strategy}
@@ -223,26 +234,57 @@ Example:
 Your numbers must be accurate - the user will execute these trades.
 {material_events_text}
 YOUR TASK:
-Analyze the current situation and recommend specific actions (BUY/SELL/HOLD) with clear reasoning.
-Consider:
-1. FIFO constraints - can locked positions be sold?
-2. Ranking quality - are current holdings still top-ranked?
-3. Entry timing - are there better opportunities?
-4. Transaction costs - is any swap worth the fees?
-5. Ongoing narratives - has any material theme resolved or emerged?
-6. Material events - if any events were detected above, address them with deep analysis
+Analyze the current situation and recommend specific actions (BUY/SELL/HOLD/WAIT) with clear reasoning.
+For each decision, work through the relevant reasoning framework defined in your strategy
+(Framework A for exits, B for averaging down, C for new entries, D for news assessment).
+Layer 1 hard constraints are non-negotiable. Use Layer 2 principles and Layer 3 frameworks
+to reason — do not apply thresholds mechanically. Address any material events above with deep analysis.
+Use WAIT (not HOLD) when recommending deferring an entry for a stock you do not currently own.
+Apply the investor profile from Layer 0 to all framework outputs — adjust thresholds and
+sizing as defined. State profile influence explicitly in reasoning when it moderates a decision.
+
+PORTFOLIO VS NARRATIVE CONFLICT CHECK:
+Before reasoning, check whether any narrative contains portfolio state (cost basis,
+stop-loss levels, share counts, trade confirmations) that conflicts with the portfolio
+data block. If a conflict exists:
+1. The portfolio block is correct — disregard the narrative data
+2. Note the conflict explicitly in your reasoning
+3. Correct the offending narrative in your narrative_updates response
+
+NARRATIVE BOUNDARY RULE (enforced):
+Narratives track market intelligence only — news, thesis, sentiment, analyst views,
+technical observations as market data.
+
+Narratives must NEVER contain:
+- Your cost basis or average cost
+- Stop-loss price levels (these derive from your cost basis)
+- Number of shares held or position size
+- Trade execution confirmations ("averaging down initiated", "position exited")
+- Cash balance or proceeds calculations
+
+These belong exclusively in the portfolio data block, which is generated from actual
+trade records and is always the source of truth. If the portfolio block and a narrative
+ever conflict, the portfolio block is correct — disregard the narrative and correct it.
 
 NARRATIVE UPDATES (in addition to recommendations):
-After analyzing current conditions, update narratives for stocks you're tracking:
-- NEW themes: If a material theme (regulatory, earnings concern, acquisition, etc.) has emerged, add it
-- UPDATES: If an active theme has new developments, update the summary
-- RESOLVE: If a theme has concluded (e.g., earnings beat resolves concern), mark resolved
+After analyzing current conditions, update narratives for stocks you're tracking.
+Narratives track market intelligence only — never portfolio execution state.
+
+- NEW: If a material market theme has emerged (news event, regulatory development,
+  analyst view, competitive shift), add it with impact assessment
+- UPDATE: If an active theme has new market developments, update the summary.
+  Reference price levels only as external market data, never as your cost basis.
+- RESOLVE: If a theme has concluded (e.g. legal dispute settled, earnings result
+  confirmed), mark resolved with a one-line outcome summary
+
+Never write into narratives: cost basis, stop-loss levels, share counts,
+trade confirmations, or cash calculations. These live in the portfolio block only.
 
 RESPONSE FORMAT (respond with valid JSON only):
 {{
   "actions": [
     {{
-      "type": "SELL" | "BUY" | "HOLD",
+      "type": "SELL" | "BUY" | "HOLD" | "WAIT",  // HOLD = own it, keep it. WAIT = not owned, entry deferred.
       "ticker": "SYMBOL",
       "amount": "all shares" | "$XXX" | "X shares",
       "expected_proceeds": 689.00,  // SELL only: net proceeds after fee
@@ -265,6 +307,28 @@ RESPONSE FORMAT (respond with valid JSON only):
 Important: Your response must be valid JSON only, no markdown or other formatting."""
 
     return prompt
+
+
+def _format_investor_profile(config: dict) -> str:
+    """Format investor profile block for prompt injection."""
+    profile = config.get('investor_profile', {})
+    defaults = {
+        'risk_tolerance': 'Moderate',
+        'ai_thesis_conviction': 'High',
+        'lock_period_comfort': 'Medium',
+        'cash_buffer_preference': 'Moderate',
+        'portfolio_significance': 'Meaningful',
+        'drawdown_behaviour': 'Hold through',
+    }
+    p = {k: profile.get(k, defaults[k]) for k in defaults}
+    return (
+        f"- Risk Tolerance: {p['risk_tolerance']}\n"
+        f"- AI Thesis Conviction: {p['ai_thesis_conviction']}\n"
+        f"- Lock-Period Comfort: {p['lock_period_comfort']}\n"
+        f"- Cash Buffer Preference: {p['cash_buffer_preference']}\n"
+        f"- Portfolio Significance: {p['portfolio_significance']}\n"
+        f"- Drawdown Behaviour: {p['drawdown_behaviour']}"
+    )
 
 
 def _format_positions(positions: list) -> str:
@@ -603,7 +667,7 @@ def _format_earnings_calendar(context: dict) -> str:
 # =============================================================================
 
 def get_recommendation(context: dict, strategy: str, narratives: dict = None,
-                       market_data: dict = None) -> dict:
+                       market_data: dict = None, manual_mode: bool = False) -> dict:
     """
     Get AI recommendation from Claude API with retry logic.
 
@@ -612,10 +676,33 @@ def get_recommendation(context: dict, strategy: str, narratives: dict = None,
         strategy: Strategy principles text
         narratives: Optional narratives dictionary for context memory
         market_data: Optional raw market data for event analysis
+        manual_mode: If True, write prompt to file and read response from stdin
 
     Returns:
         Parsed recommendation dictionary (includes narrative_updates if provided)
     """
+    # Build the prompt (always needed)
+    prompt = build_prompt(context, strategy, narratives, market_data)
+
+    if manual_mode:
+        from pathlib import Path
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        out_dir = Path("output")
+        out_dir.mkdir(exist_ok=True)
+        prompt_file = out_dir / f"prompt_{timestamp}.md"
+        prompt_file.write_text(
+            f"# InvestCompass Advisor Prompt\n\n```\n{prompt}\n```\n",
+            encoding="utf-8"
+        )
+        print(f"\n[Manual Mode] Prompt saved to: {prompt_file}")
+        print("Copy the prompt into Claude (or any LLM), then paste the JSON response")
+        print("below. When done, press Ctrl+D (Mac/Linux) or Ctrl+Z then Enter (Windows):\n")
+        response_text = sys.stdin.read().strip()
+        recommendation = parse_recommendation(response_text)
+        if recommendation.get('actions'):
+            recommendation['actions'] = validate_actions(recommendation['actions'], context)
+        return recommendation
+
     try:
         import anthropic
     except ImportError:
@@ -639,8 +726,6 @@ def get_recommendation(context: dict, strategy: str, narratives: dict = None,
             'narrative_updates': {}
         }
 
-    # Build the prompt
-    prompt = build_prompt(context, strategy, narratives, market_data)
     client = anthropic.Anthropic(api_key=api_key)
 
     # Retry loop
@@ -885,7 +970,7 @@ def validate_actions(actions: list, context: dict) -> list:
                     pass
             action['valid'] = True
 
-        else:  # HOLD
+        else:  # HOLD or WAIT — always valid, no constraint to check
             action['valid'] = True
 
         validated.append(action)
