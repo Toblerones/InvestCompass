@@ -69,11 +69,8 @@ Uncertain → hold, flag explicitly, reassess next run
 
 Your conclusion must appear in the action reasoning field.
 
-HOLD / EXIT decision:
-- Why is it falling — macro or stock-specific?
-- Is the thesis intact, weakening, or broken? (count negative signals)
-- Is the stop-loss breached? (check SITUATION SUMMARY)
-- Is there a better use of this capital?
+HOLD / EXIT decision (after thesis assessment):
+- Is there a better use of this capital right now?
 
 AVERAGE DOWN decision:
 - Is the weakness macro-driven or stock-specific?

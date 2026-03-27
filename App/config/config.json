@@ -15,7 +15,7 @@
   ],
   "monthly_budget": 300,
   "transaction_fee": 1,
-  "max_positions": 5,
+  "max_positions": 3,
   "min_hold_days": 31,
   "stop_loss_percent": -20,
   "profit_target_percent": 20,
