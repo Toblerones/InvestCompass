@@ -552,9 +552,12 @@ def display_recommendations(recommendation: dict) -> None:
             else:
                 type_str = colorize("HOLD", Colors.YELLOW + Colors.BOLD)
 
-            status_icon = colorize("[+]", Colors.GREEN) if valid else colorize("[X]", Colors.RED)
-
-            print(f"\n  {i}. [{status_icon}] {type_str} {colorize(ticker, Colors.BOLD)} - {amount}")
+            if action.get('system_enforced'):
+                print(f"\n  {i}. {colorize('[SYSTEM]', Colors.RED + Colors.BOLD)} {type_str} {colorize(ticker, Colors.BOLD)} - {amount}")
+                print(colorize("     Catastrophic floor — system-enforced exit.", Colors.RED))
+            else:
+                status_icon = colorize("[+]", Colors.GREEN) if valid else colorize("[X]", Colors.RED)
+                print(f"\n  {i}. [{status_icon}] {type_str} {colorize(ticker, Colors.BOLD)} - {amount}")
 
             # Validation error/warning
             if action.get('validation_error'):

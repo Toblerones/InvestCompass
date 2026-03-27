@@ -6,12 +6,17 @@ HARD CONSTRAINTS (enforced by system — do not recalculate)
 
 The SITUATION SUMMARY at the top of this prompt is authoritative. It tells you:
 - Which lots are sellable
-- Which stop-losses are breached
 - Which tickers have earnings blackouts (buy and sell)
 - Current cash ratio and whether Framework E applies
+- Any catastrophic floor or thesis assessment triggers
 
 Your recommendations must respect these facts. Do not reason around them.
 Do not recalculate lock status, proceeds, or cash ratio — use the values given.
+
+- Catastrophic loss floor: exit at -20% from purchase price when lot is sellable.
+  Unconditional — no reasoning overrides this. System enforces automatically.
+- At -10% loss: thesis assessment required (see DECISION QUESTIONS). Hold, average,
+  or exit only after assessing macro vs fundamental weakness. Not an automatic exit.
 
 =============================================================
 JUDGMENT PRINCIPLES
@@ -47,6 +52,22 @@ DECISION QUESTIONS
 =============================================================
 
 Before recommending for each ticker, work through the relevant questions:
+
+THESIS ASSESSMENT (required when SITUATION SUMMARY shows a lot at -10% or worse):
+
+Before any other reasoning for that ticker:
+Is this weakness primarily macro-driven (market-wide selloff, SPY also down,
+no stock-specific negative news) — or does it reflect genuine deterioration
+in this stock's fundamental thesis?
+
+Use: recent news, ranking movement, price vs SPY, earnings results,
+analyst sentiment, active narratives.
+
+Macro-driven, thesis intact → hold or average down (explain why)
+Thesis deteriorating → recommend exit (state which signals support this)
+Uncertain → hold, flag explicitly, reassess next run
+
+Your conclusion must appear in the action reasoning field.
 
 HOLD / EXIT decision:
 - Why is it falling — macro or stock-specific?

@@ -78,10 +78,12 @@ def pre_compute_constraints(context: dict) -> dict:
     )
     cash_ratio = cash / total_value if total_value > 0 else 1.0
 
-    stop_loss_threshold = config.get('stop_loss_percent', -10) / 100
+    THESIS_ASSESSMENT_THRESHOLD = -0.10   # hardcoded — triggers LLM judgment
+    catastrophic_threshold = config.get('stop_loss_percent', -20) / 100  # -0.20
 
-    # Per-lot stop-loss breach detection (sellable lots only)
-    stop_loss_breaches = []
+    # Per-lot breach detection (sellable lots only)
+    thesis_assessment_required = []
+    catastrophic_breaches = []
     sellable_lots = {}
 
     # Lock status lookup (built by analyzer)
@@ -109,14 +111,23 @@ def pre_compute_constraints(context: dict) -> dict:
             if purchase_price <= 0:
                 continue
             pnl_pct = (current_price - purchase_price) / purchase_price
-            if pnl_pct <= stop_loss_threshold:
-                stop_loss_breaches.append({
+            if pnl_pct <= catastrophic_threshold:
+                catastrophic_breaches.append({
                     'ticker': ticker,
                     'lot': i + 1,
                     'purchase_price': purchase_price,
                     'current_price': current_price,
                     'pnl_pct': round(pnl_pct * 100, 2),
                     'sellable': True,
+                })
+            elif pnl_pct <= THESIS_ASSESSMENT_THRESHOLD:
+                thesis_assessment_required.append({
+                    'ticker': ticker,
+                    'lot': i + 1,
+                    'purchase_price': purchase_price,
+                    'current_price': current_price,
+                    'pnl_pct': round(pnl_pct * 100, 2),
+                    'sellable': lot.get('is_sellable', False),
                 })
 
     # Earnings blackouts — derived from positions and opportunities
@@ -152,7 +163,8 @@ def pre_compute_constraints(context: dict) -> dict:
     max_concentration = 0.35 if sig == 'Primary' else (0.40 if sig == 'Meaningful' else 0.50)
 
     return {
-        'stop_loss_breaches': stop_loss_breaches,
+        'thesis_assessment_required': thesis_assessment_required,
+        'catastrophic_breaches': catastrophic_breaches,
         'earnings_blackouts': {'no_sell': no_sell, 'no_buy': no_buy},
         'sellable_lots': sellable_lots,
         'cash_ratio': round(cash_ratio, 3),
@@ -232,12 +244,23 @@ def build_situation_summary(constraints: dict, cash_flows: dict, context: dict) 
         else:
             lines.append(f"{ticker}: {total} share(s) held, all sellable.")
 
-    # Stop-loss breaches
-    for breach in constraints['stop_loss_breaches']:
+    # Catastrophic floor (hard constraint — system will enforce SELL)
+    for breach in constraints.get('catastrophic_breaches', []):
         lines.append(
-            f"  ⚠ {breach['ticker']} Lot {breach['lot']} stop-loss breach: "
+            f"CATASTROPHIC FLOOR: {breach['ticker']} Lot {breach['lot']} at "
             f"{breach['pnl_pct']}% from ${breach['purchase_price']:.2f}. "
-            f"Sellable — eligible for exit."
+            f"Unconditional exit required — system will enforce SELL."
+        )
+
+    # Thesis assessment trigger (judgment — LLM must assess before acting)
+    for item in constraints.get('thesis_assessment_required', []):
+        status = "Sellable" if item['sellable'] else "Locked"
+        lines.append(
+            f"THESIS ASSESSMENT REQUIRED: {item['ticker']} Lot {item['lot']} at "
+            f"{item['pnl_pct']}% from ${item['purchase_price']:.2f} ({status}). "
+            f"Before any recommendation for {item['ticker']}: assess whether this weakness "
+            f"is macro-driven or reflects genuine thesis deterioration. "
+            f"State conclusion explicitly in reasoning."
         )
 
     lines.append("")
@@ -307,7 +330,8 @@ def _format_investor_stance(config: dict) -> str:
         'Primary': 'Max single position: 35%. Require two confirming thesis signals before averaging down.',
     }
     drawdown_map = {
-        'Hold through': 'Hold through drawdowns to the -10% hard stop. No early exit flags.',
+        'Hold through': ('Hold through drawdowns unless thesis assessment concludes deterioration. '
+                         'No early exit flags — catastrophic floor at -20% is the only unconditional stop.'),
         'Tighten gradually': 'At -7% loss, reassess thesis explicitly. Flag exit if two or more minor concerns.',
         'Exit early': 'At -6% loss, begin flagging exit option. Recommend partial exit if two or more minor concerns.',
     }
@@ -1172,6 +1196,29 @@ def validate_actions(actions: list, constraints: dict, cash_flows: dict,
         else:  # HOLD or WAIT — always valid
             action['valid'] = True
             valid.append(action)
+
+    # Catastrophic floor enforcement — inject SELL for any breach not already covered
+    catastrophic_breaches = constraints.get('catastrophic_breaches', [])
+    if catastrophic_breaches:
+        sell_tickers = {a.get('ticker') for a in valid if a.get('type', '').upper() == 'SELL'}
+        for breach in catastrophic_breaches:
+            ticker = breach['ticker']
+            if ticker not in sell_tickers:
+                sellable_qty = constraints.get('sellable_lots', {}).get(ticker, {}).get('sellable_qty', 'all')
+                injected = {
+                    'type': 'SELL',
+                    'ticker': ticker,
+                    'amount': f"{sellable_qty} share(s)",
+                    'reasoning': (
+                        f"System-enforced: catastrophic floor breached at "
+                        f"{breach['pnl_pct']}% from ${breach['purchase_price']:.2f}. "
+                        f"Unconditional exit — no thesis reasoning overrides this."
+                    ),
+                    'valid': True,
+                    'system_enforced': True,
+                }
+                valid.insert(0, injected)
+                sell_tickers.add(ticker)
 
     return valid, rejected
 
