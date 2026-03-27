@@ -17,6 +17,7 @@ Key Functions:
 
 import json
 import os
+import re
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -34,6 +35,69 @@ NARRATIVES_FILE = os.path.join(
 # Limits
 MAX_ACTIVE_NARRATIVES_PER_STOCK = 5
 PRUNE_RESOLVED_AFTER_DAYS = 30
+
+
+# =============================================================================
+# Sanitisation
+# =============================================================================
+
+_PORTFOLIO_STATE_PATTERNS = [
+    r'\b\d+\.?\d*\s+shares?\b',              # "3 shares", "1.5 shares"
+    r'\blot\s+\d+\b',                         # "lot 1", "lot 2"
+    r'\bstop[\s-]loss\s+(at\s+)?\$',          # "stop-loss at $172"
+    r'\bstop\s+loss\s+triggered\b',
+    r'\baverage\s+cost\s+\$',                  # "average cost $185"
+    r'\bcost\s+basis\s+\$',
+    r'\baveraging\s+down\s+initiated\b',
+    r'\bposition\s+exited\b',
+    r'\btrade\s+confirmed\b',
+    r'\$[\d,\.]+\s+cash\b',                   # "$666 cash"
+    r'\bproceeds\s+of\s+\$',
+]
+
+_PORTFOLIO_PATTERN = re.compile(
+    '|'.join(_PORTFOLIO_STATE_PATTERNS), re.IGNORECASE
+)
+
+
+def sanitise_narrative_update(update: dict) -> dict:
+    """
+    Strip portfolio-state content from narrative add/update summary fields before writing.
+    Removes sentences that contain cost basis, share counts, stop-loss levels, or trade
+    confirmations — these belong in the portfolio block, not narratives.
+    """
+    if not update:
+        return update
+
+    def _clean_summary(text: str) -> str:
+        if not text:
+            return text
+        # Split into sentences, drop any that match portfolio-state patterns
+        sentences = re.split(r'(?<=[.!?])\s+', text)
+        clean = [s for s in sentences if not _PORTFOLIO_PATTERN.search(s)]
+        if not clean:
+            # Whole summary was portfolio-state; return empty string (theme entry kept)
+            return ''
+        return ' '.join(clean)
+
+    result = {}
+    for ticker, changes in update.items():
+        if not isinstance(changes, dict):
+            result[ticker] = changes
+            continue
+        cleaned = {}
+        for op in ('add', 'update'):
+            entries = changes.get(op, [])
+            cleaned_entries = []
+            for e in entries:
+                if isinstance(e, dict) and 'summary' in e:
+                    cleaned_entries.append({**e, 'summary': _clean_summary(e['summary'])})
+                else:
+                    cleaned_entries.append(e)
+            cleaned[op] = cleaned_entries
+        cleaned['resolve'] = changes.get('resolve', [])
+        result[ticker] = cleaned
+    return result
 
 
 # =============================================================================
@@ -169,6 +233,9 @@ def update_narratives(current_narratives: dict, ai_updates: dict) -> dict:
     """
     if not ai_updates:
         return current_narratives
+
+    # Strip portfolio-state content before applying updates
+    ai_updates = sanitise_narrative_update(ai_updates)
 
     today = datetime.now().strftime('%Y-%m-%d')
 

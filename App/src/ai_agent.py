@@ -61,11 +61,275 @@ RETRY_BACKOFF = 2.0
 
 
 # =============================================================================
+# Pre-computation (hard constraints and cash flows)
+# =============================================================================
+
+def pre_compute_constraints(context: dict) -> dict:
+    """
+    Compute all hard constraint states from context before the prompt is built.
+    The LLM receives facts, not rules.
+    """
+    config = context.get('config', {})
+    positions = context.get('current_positions', [])
+    cash = context.get('cash_available', 0)
+
+    total_value = cash + sum(
+        p.get('total_quantity', 0) * p.get('current_price', 0) for p in positions
+    )
+    cash_ratio = cash / total_value if total_value > 0 else 1.0
+
+    stop_loss_threshold = config.get('stop_loss_percent', -10) / 100
+
+    # Per-lot stop-loss breach detection (sellable lots only)
+    stop_loss_breaches = []
+    sellable_lots = {}
+
+    # Lock status lookup (built by analyzer)
+    lock_status_map = context.get('portfolio_lock_status', {}).get('positions', {})
+
+    for pos in positions:
+        ticker = pos.get('ticker', '')
+        current_price = pos.get('current_price', 0)
+        lots = pos.get('lots', [])
+        lock_info = lock_status_map.get(ticker, {})
+
+        sellable_qty = lock_info.get('sellable_quantity', 0)
+        next_unlock = lock_info.get('unlock_date')
+
+        sellable_lots[ticker] = {
+            'sellable_qty': sellable_qty,
+            'total_qty': pos.get('total_quantity', 0),
+            'next_unlock': next_unlock,
+        }
+
+        for i, lot in enumerate(lots):
+            if not lot.get('is_sellable', False):
+                continue
+            purchase_price = lot.get('purchase_price', 0)
+            if purchase_price <= 0:
+                continue
+            pnl_pct = (current_price - purchase_price) / purchase_price
+            if pnl_pct <= stop_loss_threshold:
+                stop_loss_breaches.append({
+                    'ticker': ticker,
+                    'lot': i + 1,
+                    'purchase_price': purchase_price,
+                    'current_price': current_price,
+                    'pnl_pct': round(pnl_pct * 100, 2),
+                    'sellable': True,
+                })
+
+    # Earnings blackouts — derived from positions and opportunities
+    no_sell = []   # earnings within 3 days
+    no_buy = []    # earnings within 7 days
+    all_tickers_with_earnings = (
+        list(context.get('current_positions', []))
+        + list(context.get('entry_opportunities', []))
+    )
+    for item in all_tickers_with_earnings:
+        ticker = item.get('ticker', '')
+        earnings = item.get('earnings')
+        if not earnings:
+            continue
+        days = earnings.get('days_until', 999)
+        if 0 < days <= 3 and earnings.get('sell_restricted'):
+            no_sell.append(ticker)
+        if 0 < days <= 7 and earnings.get('buy_restricted'):
+            no_buy.append(ticker)
+
+    # Concentration per ticker
+    concentration = {}
+    for pos in positions:
+        ticker = pos.get('ticker', '')
+        if total_value > 0:
+            concentration[ticker] = round(
+                (pos.get('total_quantity', 0) * pos.get('current_price', 0)) / total_value, 3
+            )
+
+    # Max single-position concentration from investor profile
+    profile = config.get('investor_profile', {})
+    sig = profile.get('portfolio_significance', 'Meaningful')
+    max_concentration = 0.35 if sig == 'Primary' else (0.40 if sig == 'Meaningful' else 0.50)
+
+    return {
+        'stop_loss_breaches': stop_loss_breaches,
+        'earnings_blackouts': {'no_sell': no_sell, 'no_buy': no_buy},
+        'sellable_lots': sellable_lots,
+        'cash_ratio': round(cash_ratio, 3),
+        'framework_e_required': cash_ratio > 0.50,
+        'position_count': len(positions),
+        'max_positions': config.get('max_positions', 3),
+        'concentration': concentration,
+        'max_concentration': max_concentration,
+        'cash': cash,
+        'total_value': round(total_value, 2),
+    }
+
+
+def pre_compute_cash_flows(context: dict) -> dict:
+    """
+    Calculate available cash and maximum proceeds from sellable positions.
+    Passed to the LLM as context — the LLM selects actions, Python validates the math.
+    """
+    config = context.get('config', {})
+    fee = config.get('transaction_fee', 1.0)
+    cash = context.get('cash_available', 0)
+    lock_status_map = context.get('portfolio_lock_status', {}).get('positions', {})
+
+    sellable_positions = {}
+    total_max_proceeds = 0.0
+
+    for pos in context.get('current_positions', []):
+        ticker = pos.get('ticker', '')
+        lock_info = lock_status_map.get(ticker, {})
+        sellable_qty = lock_info.get('sellable_quantity', 0)
+        if sellable_qty > 0:
+            current_price = pos.get('current_price', 0)
+            proceeds = max(0.0, (sellable_qty * current_price) - fee)
+            sellable_positions[ticker] = {
+                'sellable_qty': sellable_qty,
+                'current_price': current_price,
+                'max_proceeds': round(proceeds, 2),
+            }
+            total_max_proceeds += proceeds
+
+    return {
+        'starting_cash': round(cash, 2),
+        'sellable_positions': sellable_positions,
+        'max_deployable': round(cash + total_max_proceeds, 2),
+    }
+
+
+def build_situation_summary(constraints: dict, cash_flows: dict, context: dict) -> str:
+    """
+    Translate pre-computed constraint and cash flow dicts into plain English.
+    Injected at the top of the prompt as an authoritative facts block.
+    """
+    lines = ["SITUATION SUMMARY (pre-computed — do not recalculate):", ""]
+
+    pos_count = constraints['position_count']
+    max_pos = constraints['max_positions']
+    available = max(0, max_pos - pos_count)
+    lines.append(f"Portfolio: {pos_count} position(s), {available} slot(s) available.")
+
+    cash = cash_flows['starting_cash']
+    cash_pct = int(constraints['cash_ratio'] * 100)
+    fe_note = " — Framework E required: justify deployment or hold." if constraints['framework_e_required'] else ""
+    lines.append(f"Cash: ${cash:,.2f} ({cash_pct}% of portfolio){fe_note}")
+    lines.append("")
+
+    # Per-position lot summary
+    for ticker, lot_info in constraints['sellable_lots'].items():
+        sellable = lot_info['sellable_qty']
+        total = lot_info['total_qty']
+        locked = total - sellable
+        next_unlock = lot_info.get('next_unlock') or 'unknown date'
+        if locked > 0:
+            lines.append(
+                f"{ticker}: {total} share(s) held, {sellable} sellable "
+                f"({locked} locked until {next_unlock})."
+            )
+        else:
+            lines.append(f"{ticker}: {total} share(s) held, all sellable.")
+
+    # Stop-loss breaches
+    for breach in constraints['stop_loss_breaches']:
+        lines.append(
+            f"  ⚠ {breach['ticker']} Lot {breach['lot']} stop-loss breach: "
+            f"{breach['pnl_pct']}% from ${breach['purchase_price']:.2f}. "
+            f"Sellable — eligible for exit."
+        )
+
+    lines.append("")
+
+    # Cash flow if positions sold
+    for ticker, cf in cash_flows['sellable_positions'].items():
+        lines.append(
+            f"If {ticker} ({cf['sellable_qty']} share(s)) sold: "
+            f"${cf['max_proceeds']:,.2f} proceeds → ${cash_flows['max_deployable']:,.2f} total available."
+        )
+
+    # Earnings blackouts
+    no_sell = constraints['earnings_blackouts']['no_sell']
+    no_buy = constraints['earnings_blackouts']['no_buy']
+    if no_sell:
+        lines.append(f"⚠ Sell blackout (earnings within 3 days): {', '.join(no_sell)}")
+    else:
+        lines.append("No sell restrictions active (no earnings within 3 days).")
+    if no_buy:
+        lines.append(f"⚠ Buy blackout (earnings within 7 days): {', '.join(no_buy)}")
+    else:
+        lines.append("No buy restrictions active (no earnings within 7 days).")
+
+    return "\n".join(lines)
+
+
+def _format_investor_stance(config: dict) -> str:
+    """
+    Generate a single synthesised investor stance paragraph from config values.
+    Replaces the 6-dimension verbose profile block — communicates net effect only.
+    """
+    profile = config.get('investor_profile', {})
+    defaults = {
+        'risk_tolerance': 'Moderate',
+        'ai_thesis_conviction': 'High',
+        'lock_period_comfort': 'Medium',
+        'cash_buffer_preference': 'Moderate',
+        'portfolio_significance': 'Meaningful',
+        'drawdown_behaviour': 'Hold through',
+    }
+    p = {k: profile.get(k, defaults[k]) for k in defaults}
+
+    risk_map = {
+        'Conservative': 'a capital-preservation investor — smaller positions, higher conviction required before averaging down.',
+        'Moderate': 'a moderate-risk investor — balance growth and preservation, apply frameworks as designed.',
+        'Aggressive': 'a growth-oriented investor — deploy cash more actively, accept higher concentration.',
+    }
+    ai_map = {
+        'Low': 'No AI sector weighting — treat AI infrastructure stocks like any other.',
+        'Medium': 'Mild preference for top-ranked AI names. No special treatment.',
+        'High': 'High conviction in the AI infrastructure supercycle — weight thesis strength heavily. '
+                'Enter AI names despite RSI > 50 if thesis is actively strengthening.',
+    }
+    lock_map = {
+        'Low': 'Reduce averaging scale by 50% or defer if SPY 30-day return is negative.',
+        'Medium': 'Accept lock periods normally. No scale reduction unless macro is clearly deteriorating.',
+        'High': 'Lock period is not a moderating factor — apply averaging scale fully.',
+    }
+    buffer_map = {
+        'Minimal': 'Comfortable with <15% cash when high-conviction opportunities exist.',
+        'Moderate': 'Prefer 20–35% cash buffer. Framework E triggers at >50% cash.',
+        'Substantial': 'Prefer 35–50% cash buffer. Framework E triggers at >65% cash (not >50%).',
+    }
+    sig_map = {
+        'Discretionary': 'Max single position: 50% of portfolio.',
+        'Meaningful': 'Max single position: 40% of portfolio.',
+        'Primary': 'Max single position: 35%. Require two confirming thesis signals before averaging down.',
+    }
+    drawdown_map = {
+        'Hold through': 'Hold through drawdowns to the -10% hard stop. No early exit flags.',
+        'Tighten gradually': 'At -7% loss, reassess thesis explicitly. Flag exit if two or more minor concerns.',
+        'Exit early': 'At -6% loss, begin flagging exit option. Recommend partial exit if two or more minor concerns.',
+    }
+
+    lines = [
+        f"You are advising {risk_map.get(p['risk_tolerance'], risk_map['Moderate'])}",
+        ai_map.get(p['ai_thesis_conviction'], ai_map['High']),
+        buffer_map.get(p['cash_buffer_preference'], buffer_map['Moderate']),
+        sig_map.get(p['portfolio_significance'], sig_map['Meaningful']),
+        lock_map.get(p['lock_period_comfort'], lock_map['Medium']),
+        drawdown_map.get(p['drawdown_behaviour'], drawdown_map['Hold through']),
+    ]
+    return "\n".join(lines)
+
+
+# =============================================================================
 # Prompt Building
 # =============================================================================
 
 def build_prompt(context: dict, strategy: str, narratives: dict = None,
-                 market_data: dict = None) -> str:
+                 market_data: dict = None, situation_summary: str = None,
+                 config: dict = None) -> str:
     """
     Build the prompt for Claude API.
 
@@ -74,15 +338,19 @@ def build_prompt(context: dict, strategy: str, narratives: dict = None,
         strategy: Strategy principles text
         narratives: Optional narratives dictionary for context memory
         market_data: Optional raw market data for event analysis
+        situation_summary: Pre-computed situation summary (from build_situation_summary)
+        config: Config dict (falls back to context['config'] if not provided)
 
     Returns:
         Formatted prompt string
     """
+    # Resolve config
+    cfg = config if config is not None else context.get('config', {})
+
     # Import narrative formatter if narratives provided
     narratives_text = ""
     if narratives:
         from .narrative_manager import format_narratives_for_prompt, has_narratives
-        # Get tickers to include (held + top 3)
         held_tickers = [p.get('ticker') for p in context.get('current_positions', [])]
         top_3 = context.get('top_3_tickers', [])
         all_tickers = list(set(held_tickers + top_3))
@@ -94,7 +362,6 @@ def build_prompt(context: dict, strategy: str, narratives: dict = None,
     material_events = context.get('material_events', [])
     if material_events and market_data:
         from .event_detector import build_event_analysis, format_events_for_prompt
-        # Build lot-based portfolio from context positions for event analysis
         portfolio_positions = []
         for pos in context.get('current_positions', []):
             portfolio_positions.append({
@@ -111,66 +378,31 @@ def build_prompt(context: dict, strategy: str, narratives: dict = None,
         )
         material_events_text = format_events_for_prompt(event_analyses)
 
-    # Format current positions
+    # Format context sections
     positions_text = _format_positions(context.get('current_positions', []))
-
-    # Format rankings
     rankings_text = _format_rankings(context.get('rankings', {}))
-
-    # Format entry opportunities
     opportunities_text = _format_opportunities(context.get('entry_opportunities', []))
-
-    # Format lock status
-    lock_status = context.get('portfolio_lock_status', {})
-    lock_text = _format_lock_status(lock_status)
-
-    # Format news
     news_text = _format_news(context.get('news_highlights', []))
-
-    # Format price context
     price_context_text = _format_price_context(context)
-
-    # Format earnings calendar
     earnings_text = _format_earnings_calendar(context)
 
-    # Get config values
-    config = context.get('config', {})
     cash = context.get('cash_available', 0)
-    transaction_fee = config.get('transaction_fee', 10)
-
-    # Format investor profile
-    profile_text = _format_investor_profile(config)
-
-    # Format holdings for cash flow calculations
-    positions = context.get('current_positions', [])
-    holdings_cashflow = _format_holdings_for_cashflow(positions, transaction_fee)
+    transaction_fee = cfg.get('transaction_fee', 1)
+    investor_stance = _format_investor_stance(cfg)
 
     prompt = f"""You are a portfolio advisor managing a tech stock portfolio.
 
-INVESTOR PROFILE (active settings — apply to all recommendations):
-{profile_text}
-
-Refer to the Layer 0 definitions in STRATEGY PRINCIPLES for what each value means
-and how it modifies framework thresholds. When profile moderates a recommendation,
-state this explicitly in the reasoning field.
+{situation_summary if situation_summary else ""}
 
 STRATEGY PRINCIPLES:
 {strategy}
 
-REGULATORY CONSTRAINT (IMMUTABLE):
-- Minimum 30-day hold from purchase (FIFO rule)
-- Cannot sell positions held < 30 days under ANY circumstance
-- This is a hard constraint - never recommend selling locked positions
-- Positions show lot breakdown. FIFO is enforced: oldest sellable lots are sold first
-- When recommending SELL, specify quantity. Only sellable lots can be sold
+{investor_stance}
 
 CURRENT PORTFOLIO:
 {positions_text}
 
 Cash Available: ${cash:,.2f}
-
-LOCK STATUS:
-{lock_text}
 
 STOCK RANKINGS (by fundamental score):
 {rankings_text}
@@ -187,112 +419,36 @@ PRICE CONTEXT (30-day performance vs market):
 EARNINGS CALENDAR:
 {earnings_text}
 
-CRITICAL EARNINGS RULES (IMMUTABLE - override other considerations):
-1. DO NOT SELL within 3 days before earnings
-   - Gap risk: may miss runup or avoid crash unpredictably
-   - Wait for post-earnings clarity before exiting
-
-2. DO NOT BUY within 7 days before earnings
-   - High volatility around earnings creates poor entry timing
-   - Entry price likely better after earnings event
-
-3. Exception: If approaching -10% stop-loss AND earnings imminent:
-   - Warn user explicitly about timing conflict
-   - Recommend waiting unless stop-loss breach is certain
-   - If must exit, acknowledge earnings timing risk in reasoning
-
+{material_events_text}
 ONGOING NARRATIVES (from previous analysis):
 {narratives_text if narratives_text else "No prior narratives tracked (first run or no active themes)."}
 
 CONSTRAINTS:
-- Maximum positions: {config.get('max_positions', 3)}
+- Maximum positions: {cfg.get('max_positions', 3)}
 - Transaction fee: ${transaction_fee} per trade
-- Monthly deposit budget: ${config.get('monthly_budget', 400)} (external capital the user MAY deposit from outside — it is NOT currently in the portfolio and must NOT be added to or subtracted from available cash. Only reference this in risk_warnings if: (1) confidence=HIGH AND (2) existing cash is insufficient for the recommended BUY. In that case include a note such as: "Consider depositing your $X monthly budget to fund this position if you wish to proceed." Do not recommend a BUY using undeposited budget funds.)
-- Stop loss threshold: {config.get('stop_loss_percent', -10)}%
-- Profit target: +{config.get('profit_target_percent', 20)}%
-- Minimum swap benefit: $50 after fees
+- Monthly deposit budget: ${cfg.get('monthly_budget', 300)} (external capital not in the portfolio — never add to or subtract from available cash. Only mention in risk_warnings if confidence=HIGH and cash is insufficient: "Consider depositing your monthly budget to fund this position.")
+- Stop loss threshold: {cfg.get('stop_loss_percent', -10)}%
+- Profit target: +{cfg.get('profit_target_percent', 20)}%
 
-SEQUENTIAL CASH FLOW CALCULATION (CRITICAL):
-When recommending SELL followed by BUY actions, you MUST calculate cash flow sequentially:
+NARRATIVE UPDATES:
+For each tracked ticker, update the summary of any theme with new market developments.
+Keep to market intelligence only (news, analyst views, thesis signals, price levels as
+external data). Return updates in the same JSON structure as before.
 
-Current Holdings (for proceeds calculation):
-{holdings_cashflow}
-
-Instructions:
-1. For each SELL action, calculate expected proceeds:
-   proceeds = (quantity x current_price) - ${transaction_fee} fee
-2. Add proceeds to available cash: running_cash = ${cash:,.2f} + sum(all_sell_proceeds)
-3. Only recommend BUY amounts up to the running_cash total
-4. Include your calculation in the reasoning field
-
-Example:
-- Starting cash: $0, Holdings: MSFT 1.5 shares @ $465.95
-- SELL MSFT: proceeds = (1.5 x $465.95) - $10 = $689
-- Running cash: $0 + $689 = $689
-- BUY NFLX: recommend "$689" (not more), reasoning: "Using $689 from MSFT sale"
-
-Your numbers must be accurate - the user will execute these trades.
-{material_events_text}
 YOUR TASK:
-Analyze the current situation and recommend specific actions (BUY/SELL/HOLD/WAIT) with clear reasoning.
-For each decision, work through the relevant reasoning framework defined in your strategy
-(Framework A for exits, B for averaging down, C for new entries, D for news assessment).
-Layer 1 hard constraints are non-negotiable. Use Layer 2 principles and Layer 3 frameworks
-to reason — do not apply thresholds mechanically. Address any material events above with deep analysis.
-Use WAIT (not HOLD) when recommending deferring an entry for a stock you do not currently own.
-Apply the investor profile from Layer 0 to all framework outputs — adjust thresholds and
-sizing as defined. State profile influence explicitly in reasoning when it moderates a decision.
+Review the SITUATION SUMMARY, then work through the DECISION QUESTIONS in the strategy.
 
-PORTFOLIO VS NARRATIVE CONFLICT CHECK:
-Before reasoning, check whether any narrative contains portfolio state (cost basis,
-stop-loss levels, share counts, trade confirmations) that conflicts with the portfolio
-data block. If a conflict exists:
-1. The portfolio block is correct — disregard the narrative data
-2. Note the conflict explicitly in your reasoning
-3. Correct the offending narrative in your narrative_updates response
-
-NARRATIVE BOUNDARY RULE (enforced):
-Narratives track market intelligence only — news, thesis, sentiment, analyst views,
-technical observations as market data.
-
-Narratives must NEVER contain:
-- Your cost basis or average cost
-- Stop-loss price levels (these derive from your cost basis)
-- Number of shares held or position size
-- Trade execution confirmations ("averaging down initiated", "position exited")
-- Cash balance or proceeds calculations
-
-These belong exclusively in the portfolio data block, which is generated from actual
-trade records and is always the source of truth. If the portfolio block and a narrative
-ever conflict, the portfolio block is correct — disregard the narrative and correct it.
-
-NARRATIVE UPDATES (in addition to recommendations):
-After analyzing current conditions, update narratives for stocks you're tracking.
-Narratives track market intelligence only — never portfolio execution state.
-
-- NEW: If a material market theme has emerged (news event, regulatory development,
-  analyst view, competitive shift), add it with impact assessment
-- UPDATE: If an active theme has new market developments, update the summary.
-  Reference price levels only as external market data, never as your cost basis.
-- RESOLVE: If a theme has concluded (e.g. legal dispute settled, earnings result
-  confirmed), mark resolved with a one-line outcome summary
-
-Never write into narratives: cost basis, stop-loss levels, share counts,
-trade confirmations, or cash calculations. These live in the portfolio block only.
-
-RESPONSE FORMAT (respond with valid JSON only):
+Return a JSON object:
 {{
   "actions": [
     {{
-      "type": "SELL" | "BUY" | "HOLD" | "WAIT",  // HOLD = own it, keep it. WAIT = not owned, entry deferred.
+      "type": "SELL" | "BUY" | "HOLD" | "WAIT",
       "ticker": "SYMBOL",
       "amount": "all shares" | "$XXX" | "X shares",
-      "expected_proceeds": 689.00,  // SELL only: net proceeds after fee
-      "cash_source": "MSFT sale proceeds",  // BUY only: where the money comes from
-      "reasoning": "Detailed explanation including cash flow calculation"
+      "reasoning": "2-3 sentences: what signal drove this, how investor stance influenced it if at all, key risk to watch"
     }}
   ],
-  "overall_strategy": "Brief portfolio-level explanation of the recommended approach",
+  "overall_strategy": "1-2 sentence portfolio-level view",
   "risk_warnings": ["Warning 1", "Warning 2"],
   "confidence": "HIGH" | "MEDIUM" | "LOW",
   "narrative_updates": {{
@@ -303,6 +459,10 @@ RESPONSE FORMAT (respond with valid JSON only):
     }}
   }}
 }}
+
+Use WAIT (not HOLD) when entry conditions are right but capital is locked or timing is poor.
+Apply the investor stance — state explicitly when it moderates a recommendation.
+Do not recalculate any fact from the SITUATION SUMMARY.
 
 Important: Your response must be valid JSON only, no markdown or other formatting."""
 
@@ -681,8 +841,15 @@ def get_recommendation(context: dict, strategy: str, narratives: dict = None,
     Returns:
         Parsed recommendation dictionary (includes narrative_updates if provided)
     """
-    # Build the prompt (always needed)
-    prompt = build_prompt(context, strategy, narratives, market_data)
+    # Pre-compute hard constraints and cash flows (used in prompt + validation)
+    constraints = pre_compute_constraints(context)
+    cash_flows = pre_compute_cash_flows(context)
+    situation_summary = build_situation_summary(constraints, cash_flows, context)
+    cfg = context.get('config', {})
+
+    # Build the prompt
+    prompt = build_prompt(context, strategy, narratives, market_data,
+                          situation_summary=situation_summary, config=cfg)
 
     if manual_mode:
         from pathlib import Path
@@ -700,7 +867,11 @@ def get_recommendation(context: dict, strategy: str, narratives: dict = None,
         response_text = sys.stdin.read().strip()
         recommendation = parse_recommendation(response_text)
         if recommendation.get('actions'):
-            recommendation['actions'] = validate_actions(recommendation['actions'], context)
+            valid_actions, rejected_actions = validate_actions(
+                recommendation['actions'], constraints, cash_flows, cfg
+            )
+            recommendation['actions'] = valid_actions
+            recommendation['rejected_actions'] = rejected_actions
         return recommendation
 
     try:
@@ -749,12 +920,13 @@ def get_recommendation(context: dict, strategy: str, narratives: dict = None,
             # Parse the response
             recommendation = parse_recommendation(response_text)
 
-            # Validate actions against constraints
+            # Validate actions against pre-computed constraints
             if recommendation.get('actions'):
-                recommendation['actions'] = validate_actions(
-                    recommendation['actions'],
-                    context
+                valid_actions, rejected_actions = validate_actions(
+                    recommendation['actions'], constraints, cash_flows, cfg
                 )
+                recommendation['actions'] = valid_actions
+                recommendation['rejected_actions'] = rejected_actions
 
             return recommendation
 
@@ -892,90 +1064,116 @@ def parse_recommendation(response: str) -> dict:
 # Action Validation
 # =============================================================================
 
-def validate_actions(actions: list, context: dict) -> list:
+def validate_actions(actions: list, constraints: dict, cash_flows: dict,
+                     config: dict) -> tuple:
     """
-    Validate and annotate actions against hard constraints.
-    Accounts for sequential cash flow (proceeds from SELLs available for BUYs).
+    Validate actions against pre-computed hard constraints.
+    Returns (valid_actions, rejected_actions).
+
+    Rejected actions are removed from the valid list and include a rejection_reason.
+    Valid actions may still carry validation_warning for soft issues.
 
     Args:
-        actions: List of action dictionaries
-        context: Market context
+        actions: List of action dictionaries from LLM
+        constraints: Pre-computed constraints from pre_compute_constraints()
+        cash_flows: Pre-computed cash flows from pre_compute_cash_flows()
+        config: Config dictionary
 
     Returns:
-        Validated actions with warnings
+        Tuple of (valid_actions, rejected_actions)
     """
-    validated = []
-    positions = context.get('current_positions', [])
-    lock_status = context.get('portfolio_lock_status', {}).get('positions', {})
-    config = context.get('config', {})
-    transaction_fee = config.get('transaction_fee', 10)
+    valid = []
+    rejected = []
 
-    # Build position lookup for quick access (no overwrite - one entry per ticker)
-    position_lookup = {pos.get('ticker'): pos for pos in positions}
+    sellable_lots = constraints.get('sellable_lots', {})
+    no_sell = constraints.get('earnings_blackouts', {}).get('no_sell', [])
+    no_buy = constraints.get('earnings_blackouts', {}).get('no_buy', [])
+    position_count = constraints.get('position_count', 0)
+    max_positions = constraints.get('max_positions', 3)
+    concentration = constraints.get('concentration', {})
+    max_conc = constraints.get('max_concentration', 0.50)
+    total_value = constraints.get('total_value', 0)
+    transaction_fee = config.get('transaction_fee', 1.0)
 
-    # Track running cash (starts with available cash, increases with SELLs)
-    running_cash = context.get('cash_available', 0)
+    # Running cash: starts with available cash, increases as SELLs are processed
+    running_cash = cash_flows.get('starting_cash', 0)
+    # Track new positions added by BUYs this cycle
+    new_positions = set()
 
     for action in actions:
         action_type = action.get('type', '').upper()
         ticker = action.get('ticker', '')
 
-        # Check SELL actions against FIFO (lot-aware)
         if action_type == 'SELL':
-            position_lock = lock_status.get(ticker, {})
-            sellable_qty = position_lock.get('sellable_quantity', 0)
+            lot_info = sellable_lots.get(ticker, {})
+            sellable_qty = lot_info.get('sellable_qty', 0)
+            next_unlock = lot_info.get('next_unlock', 'N/A')
 
-            if position_lock and sellable_qty <= 0:
-                # Mark as invalid - no sellable lots
-                action['valid'] = False
-                action['validation_error'] = (
-                    f"INVALID: {ticker} is LOCKED (all lots locked). "
-                    f"Cannot sell until {position_lock.get('unlock_date', 'N/A')}."
+            if ticker in no_sell:
+                action['rejection_reason'] = (
+                    f"{ticker} has earnings within 3 days — sell blackout active."
                 )
-            else:
-                action['valid'] = True
+                rejected.append(action)
+                continue
 
-                # Calculate proceeds from sellable quantity only
-                pos = position_lookup.get(ticker, {})
-                sell_qty = sellable_qty  # Can only sell FIFO-eligible lots
-                current_price = pos.get('current_price', 0)
-                gross_value = sell_qty * current_price
-                net_proceeds = gross_value - transaction_fee
+            if sellable_qty <= 0:
+                action['rejection_reason'] = (
+                    f"{ticker} has no sellable lots. "
+                    f"All shares locked until {next_unlock}."
+                )
+                rejected.append(action)
+                continue
 
-                # Add proceeds to running cash for subsequent BUY validation
-                running_cash += net_proceeds
-
-                # Verify AI's calculation if provided
-                ai_proceeds = action.get('expected_proceeds')
-                if ai_proceeds is not None:
-                    diff = abs(float(ai_proceeds) - net_proceeds)
-                    if diff > 50:
-                        action['validation_warning'] = (
-                            f"AI calculated ${ai_proceeds:.2f} proceeds, "
-                            f"actual would be ${net_proceeds:.2f} ({sell_qty} sellable shares)"
-                        )
+            # Valid SELL — add proceeds to running cash
+            cf_info = cash_flows.get('sellable_positions', {}).get(ticker, {})
+            proceeds = cf_info.get('max_proceeds', 0)
+            running_cash += proceeds
+            action['valid'] = True
+            valid.append(action)
 
         elif action_type == 'BUY':
-            # Validate against running cash (includes proceeds from prior SELLs)
+            if ticker in no_buy:
+                action['rejection_reason'] = (
+                    f"{ticker} has earnings within 7 days — buy blackout active."
+                )
+                rejected.append(action)
+                continue
+
+            # Check max positions (only for new tickers not already held)
+            already_held = ticker in sellable_lots  # held positions are in sellable_lots
+            is_new = ticker not in sellable_lots and ticker not in new_positions
+            if is_new and (position_count + len(new_positions)) >= max_positions:
+                action['rejection_reason'] = (
+                    f"Cannot open {ticker}: already at max {max_positions} position(s)."
+                )
+                rejected.append(action)
+                continue
+
+            # Check cash sufficiency
             amount_str = action.get('amount', '')
             if '$' in str(amount_str):
                 try:
                     amount = float(re.sub(r'[^\d.]', '', str(amount_str)))
-                    if amount > running_cash + 10:  # $10 buffer for rounding
+                    if amount > running_cash + 10:  # $10 rounding buffer
                         action['validation_warning'] = (
-                            f"Requested ${amount:.2f} but only ${running_cash:.2f} available "
-                            f"(including proceeds from prior SELLs)"
+                            f"Requested ${amount:,.2f} but only ${running_cash:,.2f} available "
+                            f"(including any SELL proceeds)."
                         )
+                    else:
+                        running_cash -= amount
                 except ValueError:
                     pass
+
+            if is_new:
+                new_positions.add(ticker)
             action['valid'] = True
+            valid.append(action)
 
-        else:  # HOLD or WAIT — always valid, no constraint to check
+        else:  # HOLD or WAIT — always valid
             action['valid'] = True
+            valid.append(action)
 
-        validated.append(action)
-
-    return validated
+    return valid, rejected
 
 
 # =============================================================================

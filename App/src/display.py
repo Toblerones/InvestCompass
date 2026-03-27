@@ -577,6 +577,22 @@ def display_recommendations(recommendation: dict) -> None:
     else:
         print("\n  No specific actions recommended at this time.")
 
+    # Rejected actions (system constraint violations)
+    rejected = recommendation.get('rejected_actions', [])
+    if rejected:
+        print()
+        print_subheader("Rejected Actions (System Constraints)")
+        for r in rejected:
+            action_type = r.get('type', 'ACTION')
+            ticker = r.get('ticker', '')
+            amount = r.get('amount', '')
+            reason = r.get('rejection_reason', 'constraint violation')
+            print(colorize(
+                f"  ⚠ Rejected: {action_type} {ticker} {amount}".rstrip(),
+                Colors.YELLOW
+            ))
+            print(f"    Reason: {reason}")
+
     # Risk warnings
     display_risk_warnings(recommendation.get('risk_warnings', []))
 
