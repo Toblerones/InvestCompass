@@ -549,6 +549,8 @@ def display_recommendations(recommendation: dict) -> None:
                 type_str = colorize("BUY", Colors.GREEN + Colors.BOLD)
             elif action_type == 'SELL':
                 type_str = colorize("SELL", Colors.RED + Colors.BOLD)
+            elif action_type == 'WAIT':
+                type_str = colorize("WAIT", Colors.YELLOW + Colors.BOLD)
             else:
                 type_str = colorize("HOLD", Colors.YELLOW + Colors.BOLD)
 
@@ -556,7 +558,7 @@ def display_recommendations(recommendation: dict) -> None:
                 print(f"\n  {i}. {colorize('[SYSTEM]', Colors.RED + Colors.BOLD)} {type_str} {colorize(ticker, Colors.BOLD)} - {amount}")
                 print(colorize("     Catastrophic floor — system-enforced exit.", Colors.RED))
             else:
-                status_icon = colorize("[+]", Colors.GREEN) if valid else colorize("[X]", Colors.RED)
+                status_icon = "+" if valid else "X"
                 print(f"\n  {i}. [{status_icon}] {type_str} {colorize(ticker, Colors.BOLD)} - {amount}")
 
             # Validation error/warning
